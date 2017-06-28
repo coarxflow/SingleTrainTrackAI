@@ -194,7 +194,8 @@ namespace SingleTrackAI
             NetInfo info = instance.m_segments.m_buffer[(int)instance.m_lanes.m_buffer[(int)((UIntPtr)laneID)].m_segment].Info;
             NetInfo info_crt = instance.m_segments.m_buffer[(int)instance.m_lanes.m_buffer[(int)((UIntPtr)prevLaneID)].m_segment].Info;
 
-            //CODebug.Log(LogChannel.Modding, MOD_NAME + " - check track with name " + info.name+" "+ info_crt.name);
+
+            CODebug.Log(LogChannel.Modding, MOD_NAME + " - check track with name " + info.name+" "+ info_crt.name);
 
             if (!info_crt.name.Contains(TARGET_RAIL_NAME) && vehiclesWithReservation.Contains(vehicleID)) //remove any reservation once the train has left the one lane track section
             {
