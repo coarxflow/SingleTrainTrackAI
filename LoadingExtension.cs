@@ -40,13 +40,8 @@ namespace SingleTrackAI
                 return;
             }
             var allFlags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
-            var method = typeof(TrainAI).GetMethod("CheckNextLane", allFlags);
-            redirects.Add(method, RedirectionHelper.RedirectCalls(method, typeof(SingleTrainTrackAI).GetMethod("CheckNextLane", allFlags)));
-
-            /*method = typeof(NetSegment).GetMethods(allFlags).Single(c => c.Name == "CalculateCorner" && c.GetParameters().Length == 20);
-            CODebug.Log(LogChannel.Modding, "redirects method : " + method);
-            redirects.Add(method, RedirectionHelper.RedirectCalls(method, typeof(SingleTrainTrackAI).GetMethod("CalculateCorner", allFlags)));
-            */
+            var method = typeof(TrainAI).GetMethods(allFlags).Single(c => c.Name == "UpdatePathTargetPositions" && c.GetParameters().Length == 11);
+            redirects.Add(method, RedirectionHelper.RedirectCalls(method, typeof(SingleTrainTrackAI).GetMethods(allFlags).Single(c => c.Name == "UpdatePathTargetPositions" && c.GetParameters().Length == 11)));
 
             hookEnabled = true;
         }

@@ -188,18 +188,19 @@ namespace SingleTrackAI
             }
         }
 
-        private bool CheckSingleTrack2Ways(ushort vehicleID, ref float maxSpeed, uint laneID, uint prevLaneID)
+        private bool CheckSingleTrack2Ways(ushort vehicleID, Vehicle vehicleData, ref float maxSpeed, uint laneID, uint prevLaneID)
         {
             NetManager instance = Singleton<NetManager>.instance;
             NetInfo info = instance.m_segments.m_buffer[(int)instance.m_lanes.m_buffer[(int)((UIntPtr)laneID)].m_segment].Info;
             NetInfo info_crt = instance.m_segments.m_buffer[(int)instance.m_lanes.m_buffer[(int)((UIntPtr)prevLaneID)].m_segment].Info;
 
 
-            CODebug.Log(LogChannel.Modding, MOD_NAME + " - check track with name " + info.name+" "+ info_crt.name);
+            //CODebug.Log(LogChannel.Modding, MOD_NAME + " - check track with name " + info.name+" "+ info_crt.name);
+            ushort leadingVehicleID = vehicleData.GetFirstVehicle(vehicleID);
 
-            if (!info_crt.name.Contains(TARGET_RAIL_NAME) && vehiclesWithReservation.Contains(vehicleID)) //remove any reservation once the train has left the one lane track section
+            if (!info_crt.name.Contains(TARGET_RAIL_NAME) && vehiclesWithReservation.Contains(leadingVehicleID)) //remove any reservation once the train has left the one lane track section
             {
-                RemoveReservationForVehicle(vehicleID);
+                RemoveReservationForVehicle(leadingVehicleID);
                 //CODebug.Log(LogChannel.Modding, MOD_NAME + " - cleaned list of " + reservedSegments.Count + " reservations for vehicle " + vehicleID);
             }
             if (info.name.Contains(TARGET_RAIL_NAME)) //train has entered a one lane section
@@ -209,9 +210,9 @@ namespace SingleTrackAI
                 {
                     //CODebug.Log(LogChannel.Modding, MOD_NAME+" - started reserving for vehicle " + vehicleID);
 
-                    ReserveSuccessiveSegments(instance.m_lanes.m_buffer[(int)((UIntPtr)laneID)].m_segment, vehicleID);
+                    ReserveSuccessiveSegments(instance.m_lanes.m_buffer[(int)((UIntPtr)laneID)].m_segment, leadingVehicleID);
                 }
-                else if (reserved_for_vehicle != vehicleID) //not allowed on this track, stop
+                else if (reserved_for_vehicle != leadingVehicleID) //not allowed on this track, stop
                 {
                     //CODebug.Log(LogChannel.Modding, MOD_NAME + " - vehicle " + vehicleID + " cannot proceed because track reserved by "+ reserved_for_vehicle);
 
@@ -223,11 +224,323 @@ namespace SingleTrackAI
             return false;
         }
 
+        protected void UpdatePathTargetPositions(ushort vehicleID, ref Vehicle vehicleData, Vector3 refPos1, Vector3 refPos2, ushort leaderID, ref Vehicle leaderData, ref int index, int max1, int max2, float minSqrDistanceA, float minSqrDistanceB)
+        {
+            PathManager instance = Singleton<PathManager>.instance;
+            NetManager instance2 = Singleton<NetManager>.instance;
+            Vector4 vector = vehicleData.m_targetPos0;
+            vector.w = 1000f;
+            float num = minSqrDistanceA;
+            float num2 = 0f;
+            uint num3 = vehicleData.m_path;
+            byte b = vehicleData.m_pathPositionIndex;
+            byte b2 = vehicleData.m_lastPathOffset;
+            if (b == 255)
+            {
+                b = 0;
+                if (index <= 0)
+                {
+                    vehicleData.m_pathPositionIndex = 0;
+                }
+                if (!Singleton<PathManager>.instance.m_pathUnits.m_buffer[(int)((UIntPtr)num3)].CalculatePathPositionOffset(b >> 1, vector, out b2))
+                {
+                    this.InvalidPath(vehicleID, ref vehicleData, leaderID, ref leaderData);
+                    return;
+                }
+            }
+            PathUnit.Position position;
+            if (!instance.m_pathUnits.m_buffer[(int)((UIntPtr)num3)].GetPosition(b >> 1, out position))
+            {
+                this.InvalidPath(vehicleID, ref vehicleData, leaderID, ref leaderData);
+                return;
+            }
+            uint num4 = PathManager.GetLaneID(position);
+            Bezier3 bezier;
+            while (true)
+            {
+                if ((b & 1) == 0)
+                {
+                    bool flag = true;
+                    while (b2 != position.m_offset)
+                    {
+                        if (flag)
+                        {
+                            flag = false;
+                        }
+                        else
+                        {
+                            float num5 = Mathf.Max(Mathf.Sqrt(num) - Vector3.Distance(vector, refPos1), Mathf.Sqrt(num2) - Vector3.Distance(vector, refPos2));
+                            int num6;
+                            if (num5 < 0f)
+                            {
+                                num6 = 4;
+                            }
+                            else
+                            {
+                                num6 = 4 + Mathf.CeilToInt(num5 * 256f / (instance2.m_lanes.m_buffer[(int)((UIntPtr)num4)].m_length + 1f));
+                            }
+                            if (b2 > position.m_offset)
+                            {
+                                b2 = (byte)Mathf.Max((int)b2 - num6, (int)position.m_offset);
+                            }
+                            else if (b2 < position.m_offset)
+                            {
+                                b2 = (byte)Mathf.Min((int)b2 + num6, (int)position.m_offset);
+                            }
+                        }
+                        Vector3 a;
+                        Vector3 vector2;
+                        float b3;
+                        this.CalculateSegmentPosition(vehicleID, ref vehicleData, position, num4, b2, out a, out vector2, out b3);
+                        vector.Set(a.x, a.y, a.z, Mathf.Min(vector.w, b3));
+                        float sqrMagnitude = (a - refPos1).sqrMagnitude;
+                        float sqrMagnitude2 = (a - refPos2).sqrMagnitude;
+                        if (sqrMagnitude >= num && sqrMagnitude2 >= num2)
+                        {
+                            if (index <= 0)
+                            {
+                                vehicleData.m_lastPathOffset = b2;
+                            }
+                            vehicleData.SetTargetPos(index++, vector);
+                            if (index < max1)
+                            {
+                                num = minSqrDistanceB;
+                                refPos1 = vector;
+                            }
+                            else if (index == max1)
+                            {
+                                num = (refPos2 - refPos1).sqrMagnitude;
+                                num2 = minSqrDistanceA;
+                            }
+                            else
+                            {
+                                num2 = minSqrDistanceB;
+                                refPos2 = vector;
+                            }
+                            vector.w = 1000f;
+                            if (index == max2)
+                            {
+                                return;
+                            }
+                        }
+                    }
+                    b += 1;
+                    b2 = 0;
+                    if (index <= 0)
+                    {
+                        vehicleData.m_pathPositionIndex = b;
+                        vehicleData.m_lastPathOffset = b2;
+                    }
+                }
+                int num7 = (b >> 1) + 1;
+                uint num8 = num3;
+                if (num7 >= (int)instance.m_pathUnits.m_buffer[(int)((UIntPtr)num3)].m_positionCount)
+                {
+                    num7 = 0;
+                    num8 = instance.m_pathUnits.m_buffer[(int)((UIntPtr)num3)].m_nextPathUnit;
+                    if (num8 == 0u)
+                    {
+                        goto Block_19;
+                    }
+                }
+                PathUnit.Position position2;
+                if (!instance.m_pathUnits.m_buffer[(int)((UIntPtr)num8)].GetPosition(num7, out position2))
+                {
+                    goto Block_21;
+                }
+                NetInfo info = instance2.m_segments.m_buffer[(int)position2.m_segment].Info;
+                if (info.m_lanes.Length <= (int)position2.m_lane)
+                {
+                    goto Block_22;
+                }
+                uint laneID = PathManager.GetLaneID(position2);
+                NetInfo.Lane lane = info.m_lanes[(int)position2.m_lane];
+                if (lane.m_laneType != NetInfo.LaneType.Vehicle)
+                {
+                    goto Block_23;
+                }
+                if (position2.m_segment != position.m_segment && leaderID != 0)
+                {
+                    leaderData.m_flags &= ~Vehicle.Flags.Leaving;
+                }
+                byte b4 = 0;
+                if (num4 != laneID)
+                {
+                    PathUnit.CalculatePathPositionOffset(laneID, vector, out b4);
+                    bezier = default(Bezier3);
+                    Vector3 vector3;
+                    float num9;
+                    this.CalculateSegmentPosition(vehicleID, ref vehicleData, position, num4, position.m_offset, out bezier.a, out vector3, out num9);
+                    bool flag2;
+                    if ((leaderData.m_flags & Vehicle.Flags.Reversed) != (Vehicle.Flags)0)
+                    {
+                        flag2 = (vehicleData.m_trailingVehicle == 0);
+                    }
+                    else
+                    {
+                        flag2 = (vehicleData.m_leadingVehicle == 0);
+                    }
+                    bool flag3 = flag2 && b2 == 0;
+                    Vector3 vector4;
+                    float num10;
+                    this.CalculateSegmentPosition(vehicleID, ref vehicleData, position2, laneID, b4, out bezier.d, out vector4, out num10);
+                    if (position.m_offset == 0)
+                    {
+                        vector3 = -vector3;
+                    }
+                    if (b4 < position2.m_offset)
+                    {
+                        vector4 = -vector4;
+                    }
+                    vector3.Normalize();
+                    vector4.Normalize();
+                    float num11;
+                    NetSegment.CalculateMiddlePoints(bezier.a, vector3, bezier.d, vector4, true, true, out bezier.b, out bezier.c, out num11);
+                    if (flag3)
+                    {
+                        //code added for single track 2 ways
+                        if (!this.CheckSingleTrack2Ways(vehicleID, vehicleData, ref num10, laneID, num4))
+                            this.CheckNextLane(vehicleID, ref vehicleData, ref num10, position2, laneID, b4, position, num4, position.m_offset, bezier);
+                    }
+                    if (flag2 && (num10 < 0.01f || (instance2.m_segments.m_buffer[(int)position2.m_segment].m_flags & (NetSegment.Flags.Collapsed | NetSegment.Flags.Flooded)) != NetSegment.Flags.None))
+                    {
+                        goto IL_595;
+                    }
+                    if (num11 > 1f)
+                    {
+                        ushort num12;
+                        if (b4 == 0)
+                        {
+                            num12 = instance2.m_segments.m_buffer[(int)position2.m_segment].m_startNode;
+                        }
+                        else if (b4 == 255)
+                        {
+                            num12 = instance2.m_segments.m_buffer[(int)position2.m_segment].m_endNode;
+                        }
+                        else
+                        {
+                            num12 = 0;
+                        }
+                        float num13 = 1.57079637f * (1f + Vector3.Dot(vector3, vector4));
+                        if (num11 > 1f)
+                        {
+                            num13 /= num11;
+                        }
+                        num10 = Mathf.Min(num10, this.CalculateTargetSpeed(vehicleID, ref vehicleData, 1000f, num13));
+                        while (b2 < 255)
+                        {
+                            float num14 = Mathf.Max(Mathf.Sqrt(num) - Vector3.Distance(vector, refPos1), Mathf.Sqrt(num2) - Vector3.Distance(vector, refPos2));
+                            int num15;
+                            if (num14 < 0f)
+                            {
+                                num15 = 8;
+                            }
+                            else
+                            {
+                                num15 = 8 + Mathf.CeilToInt(num14 * 256f / (num11 + 1f));
+                            }
+                            b2 = (byte)Mathf.Min((int)b2 + num15, 255);
+                            Vector3 a2 = bezier.Position((float)b2 * 0.003921569f);
+                            vector.Set(a2.x, a2.y, a2.z, Mathf.Min(vector.w, num10));
+                            float sqrMagnitude3 = (a2 - refPos1).sqrMagnitude;
+                            float sqrMagnitude4 = (a2 - refPos2).sqrMagnitude;
+                            if (sqrMagnitude3 >= num && sqrMagnitude4 >= num2)
+                            {
+                                if (index <= 0)
+                                {
+                                    vehicleData.m_lastPathOffset = b2;
+                                }
+                                if (num12 != 0)
+                                {
+                                    this.UpdateNodeTargetPos(vehicleID, ref vehicleData, num12, ref instance2.m_nodes.m_buffer[(int)num12], ref vector, index);
+                                }
+                                vehicleData.SetTargetPos(index++, vector);
+                                if (index < max1)
+                                {
+                                    num = minSqrDistanceB;
+                                    refPos1 = vector;
+                                }
+                                else if (index == max1)
+                                {
+                                    num = (refPos2 - refPos1).sqrMagnitude;
+                                    num2 = minSqrDistanceA;
+                                }
+                                else
+                                {
+                                    num2 = minSqrDistanceB;
+                                    refPos2 = vector;
+                                }
+                                vector.w = 1000f;
+                                if (index == max2)
+                                {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    PathUnit.CalculatePathPositionOffset(laneID, vector, out b4);
+                }
+                if (index <= 0)
+                {
+                    if (num7 == 0)
+                    {
+                        Singleton<PathManager>.instance.ReleaseFirstUnit(ref vehicleData.m_path);
+                    }
+                    if (num7 >= (int)(instance.m_pathUnits.m_buffer[(int)((UIntPtr)num8)].m_positionCount - 1) && instance.m_pathUnits.m_buffer[(int)((UIntPtr)num8)].m_nextPathUnit == 0u && leaderID != 0)
+                    {
+                        this.ArrivingToDestination(leaderID, ref leaderData);
+                    }
+                }
+                num3 = num8;
+                b = (byte)(num7 << 1);
+                b2 = b4;
+                if (index <= 0)
+                {
+                    vehicleData.m_pathPositionIndex = b;
+                    vehicleData.m_lastPathOffset = b2;
+                    vehicleData.m_flags = ((vehicleData.m_flags & ~(Vehicle.Flags.OnGravel | Vehicle.Flags.Underground | Vehicle.Flags.Transition)) | info.m_setVehicleFlags);
+                }
+                position = position2;
+                num4 = laneID;
+            }
+            return;
+            Block_19:
+            if (index <= 0)
+            {
+                Singleton<PathManager>.instance.ReleasePath(vehicleData.m_path);
+                vehicleData.m_path = 0u;
+            }
+            vector.w = 1f;
+            vehicleData.SetTargetPos(index++, vector);
+            return;
+            Block_21:
+            this.InvalidPath(vehicleID, ref vehicleData, leaderID, ref leaderData);
+            return;
+            Block_22:
+            this.InvalidPath(vehicleID, ref vehicleData, leaderID, ref leaderData);
+            return;
+            Block_23:
+            this.InvalidPath(vehicleID, ref vehicleData, leaderID, ref leaderData);
+            return;
+            IL_595:
+            if (index <= 0)
+            {
+                vehicleData.m_lastPathOffset = b2;
+            }
+            vector = bezier.a;
+            vector.w = 0f;
+            while (index < max2)
+            {
+                vehicleData.SetTargetPos(index++, vector);
+            }
+        }
+
+
         private void CheckNextLane(ushort vehicleID, ref Vehicle vehicleData, ref float maxSpeed, PathUnit.Position position, uint laneID, byte offset, PathUnit.Position prevPos, uint prevLaneID, byte prevOffset, Bezier3 bezier)
 		{
-            //code added for single track 2 ways
-            if (CheckSingleTrack2Ways(vehicleID, ref maxSpeed, laneID, prevLaneID))
-                return;
 
             NetManager instance = Singleton<NetManager>.instance;
             Vehicle.Frame lastFrameData = vehicleData.GetLastFrameData();
