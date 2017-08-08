@@ -59,6 +59,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AssemblyInfo.cs" />
+    <Compile Include="SingleTrackSection.cs" />
     <Compile Include="detour.cs" />
     <Compile Include="LoadingExtension.cs" />
     <Compile Include="SingleTrainTrackAI.cs" />
@@ -66,7 +67,7 @@
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PreBuildEvent>SET FileTarget="C:\Users\Loic\AppData\Local\Colossal Order\Cities_Skylines\Addons\Mods\SingleTrackAI\SingleTrackAI.dll"
+    <PreBuildEvent>SET FileTarget="D:\SteamLibrary\steamapps\workshop\content\255710\949504539\SingleTrackAI.dll"
 IF EXIST %25FileTarget%25 del /F %25FileTarget%25</PreBuildEvent>
   </PropertyGroup>
   <PropertyGroup>
