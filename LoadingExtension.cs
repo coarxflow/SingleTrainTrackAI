@@ -23,7 +23,9 @@ namespace SingleTrackAI
         {
             base.OnLevelLoaded(mode);
             EnableHook();
-            SingleTrainTrackAI.Initialize();
+
+            if (ReservationManager.instance != null)
+                ReservationManager.instance.Initialize();
         }
 		
 

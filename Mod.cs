@@ -7,7 +7,7 @@ namespace SingleTrackAI
 		
 		public static string modName = "SingleTrainTrackAI";
 		public static String modID = "SingleTrainTrackAI";
-		public static string version = "1.0.2";
+		public static string version = "1.1.0";
 		
 		public string Name {
 			get { return modName; }

@@ -9,364 +9,76 @@ using System.Collections.Generic;
 namespace SingleTrackAI
 {
 
-    struct ReservedSegment
-    {
-        public uint segment_id;
-        public ushort vehicle_id;
-    }
+    
 
     public class SingleTrainTrackAI : VehicleAI
     {
 
         public static String MOD_NAME = "SingleTrainTrackAI";
 
-        static List<ReservedSegment> reservedSegments = new List<ReservedSegment>();
+        
 
-        static List<ushort> vehiclesWithReservation = new List<ushort>();
-
-        public static void Initialize()
-        {
-            reservedSegments.Clear();
-            vehiclesWithReservation.Clear();
-            //CODebug.Log(LogChannel.Modding, MOD_NAME+" - reservation lists initialized");
-        }
-
-        static bool CheckAndAddReservedSegment(uint segment_id, ushort vehicle_id)
-        {
-            bool include = true;
-            bool reserved = false;
-            for (int i = 0; i < reservedSegments.Count; i++)
-            {
-                if (reservedSegments[i].segment_id == segment_id)
-                {
-                    if (reservedSegments[i].vehicle_id == 0)
-                    {
-                        ReservedSegment rs = reservedSegments[i];
-                        rs.vehicle_id = vehicle_id;
-                        reservedSegments[i] = rs;
-                        //CODebug.Log(LogChannel.Modding, "changed segment " + segment_id + " for vehicle " + vehicle_id);
-                        reserved = true;
-                    }
-                    include = false;
-                    break;
-                }
-            }
-
-            if(include)
-            {
-                ReservedSegment rs = new ReservedSegment();
-                rs.segment_id = segment_id;
-                rs.vehicle_id = vehicle_id;
-                reservedSegments.Add(rs);
-                //CODebug.Log(LogChannel.Modding, "added segment "+ segment_id+ " for vehicle "+ vehicle_id);
-                reserved = true;
-            }
-
-            return reserved;
-                
-        }
-
-        const int CANCEL_RESERVATION_AFTER = 50;
-
-        static uint CheckReservation(uint segment_id)
-        {
-            for (int i = 0; i < reservedSegments.Count; i++)
-            {
-                if (reservedSegments[i].segment_id == segment_id)
-                {
-                    Vehicle v = Singleton<VehicleManager>.instance.m_vehicles.m_buffer[reservedSegments[i].vehicle_id];
-                    if (v.GetLastFrameData().m_velocity.magnitude < 0.001f) //remove a vehicle invisble (or blocked for some reason) still having the reservation for the segments active
-                    {
-                        v.m_blockCounter++;
-                        if (v.m_blockCounter > CANCEL_RESERVATION_AFTER) //wait for some time before cancelling reservation, as train could also be starting...
-                        {
-                            //CODebug.Log(LogChannel.Modding, "unspawn vehicle " + reservedSegments[i].vehicle_id);
-                            RemoveReservationForVehicle(reservedSegments[i].vehicle_id);
-                            Singleton<VehicleManager>.instance.ReleaseVehicle(reservedSegments[i].vehicle_id);
-                            //v.Unspawn(reservedSegments[i].vehicle_id);
-                            return 0;
-                        }
-                        Singleton<VehicleManager>.instance.m_vehicles.m_buffer[reservedSegments[i].vehicle_id] = v;
-                    }
-
-
-                    //CODebug.Log(LogChannel.Modding, "reserved for vehicle "+ reservedSegments[i].vehicle_id + " flags " + v.m_flags+" "+v.m_flags2+" velocity "+v.GetFrameData(Singleton<SimulationManager>.instance.m_currentFrameIndex).m_velocity+" "+v.m_blockCounter+" "+v.m_waitCounter);
-                    //CODebug.Log(LogChannel.Modding, "vehicle cat " + v.Info.category);
-                    return reservedSegments[i].vehicle_id;
-                }
-            }
-            return 0;
-        }
-
-        static void RemoveReservationForVehicle(ushort vehicle_id)
-        {
-            //if (!vehiclesWithReservation.Contains(vehicle_id))
-            //return;
-
-            //vehiclesWithReservation.Remove(vehicle_id);
-            int index = vehiclesWithReservation.IndexOf(vehicle_id);
-            if(index != -1)
-                vehiclesWithReservation[index] = 0;
-
-            for (int i = reservedSegments.Count-1; i >= 0; i--)
-            {
-                if (reservedSegments[i].vehicle_id == vehicle_id)
-                {
-                    ReservedSegment rs = reservedSegments[i];
-                    rs.vehicle_id = 0;
-                    reservedSegments[i] = rs;
-                    //reservedSegments.RemoveAt(i); //crash the game??
-                }
-            }
-        }
-
-        const string TARGET_RAIL_NAME = "Rail1L2W";
-
-        static void ReserveSuccessiveSegments(uint segment_id, ushort vehicle_id)
-        {
-            int index = vehiclesWithReservation.IndexOf(0);
-            if (index != -1)
-                vehiclesWithReservation[index] = vehicle_id;
-            else
-                vehiclesWithReservation.Add(vehicle_id);
-
-            NetManager instance = Singleton<NetManager>.instance;
-
-            int nieghbours_count = 0;
-            bool include_segments = false;
-            List<uint> single_lanes = new List<uint>();
-            
-            NetNode node;
-            NetSegment seg = instance.m_segments.m_buffer[segment_id];
-
-            List<uint> nodes_included = new List<uint>();
-            int n = 0;
-            nodes_included.Add(seg.m_endNode);
-            nodes_included.Add(seg.m_startNode);
-            
-            while (nodes_included.Count > n)
-            {
-                nieghbours_count = 0;
-                single_lanes.Clear();
-                include_segments = false;
-
-                node = instance.m_nodes.m_buffer[(int)((UIntPtr)nodes_included[n])];
-
-                //find every segments attached to node
-                for (int i = 0; i < 8; i++)
-                {
-                    if (node.GetSegment(i) != 0)
-                    {
-                        nieghbours_count++;
-                        if (instance.m_segments.m_buffer[(int)node.GetSegment(i)].Info.name.Contains(TARGET_RAIL_NAME)) //detect 1 lane 2 ways segments
-                            single_lanes.Add(node.GetSegment(i));
-                    }
-                }
-
-                if (nieghbours_count <= 2 && single_lanes.Count > 0) //include single track segments without branching
-                    include_segments = true;
-                else if (nieghbours_count > 2) //include single track segments with branching. All single track 2 ways segments connected together will get booked
-                    include_segments = true;
-
-                if (include_segments)
-                {
-                    for (int i = 0; i < single_lanes.Count; i++)
-                    {
-                        if (CheckAndAddReservedSegment(single_lanes[i], vehicle_id)) //if segment gets reserved by this vehicle, look for further segments on the track
-                        {
-                            seg = instance.m_segments.m_buffer[(int)single_lanes[i]];
-                            if (!nodes_included.Contains(seg.m_endNode))
-                                nodes_included.Add(seg.m_endNode);
-                            if (!nodes_included.Contains(seg.m_startNode))
-                                nodes_included.Add(seg.m_startNode);
-                        }
-                    }
-                }
-
-                //CODebug.Log(LogChannel.Modding, "nodes to inspect " + nodes_included.Count + " reserved list " + reservedSegments.Count);
-                n++;
-            }
-        }
-
-        private bool CheckRemoveReservationSingleTrack2Ways(ushort vehicleID, Vehicle leaderData)
-        {
-            PathManager instance = Singleton<PathManager>.instance;
-            VehicleManager instance2 = Singleton<VehicleManager>.instance;
-            NetManager instance3 = Singleton<NetManager>.instance;
-
-            // get ID of the last vehicle, taking into account train running direction
-            ushort backVehicleID;
-            if ((leaderData.m_flags & Vehicle.Flags.Reversed) != (Vehicle.Flags)0) //train runs reversed
-            {
-                backVehicleID = leaderData.GetFirstVehicle(vehicleID);
-            }
-            else
-            {
-                backVehicleID = leaderData.GetLastVehicle(vehicleID);
-            }
-
-            CODebug.Log(LogChannel.Modding, MOD_NAME + " ----------------------------------- CheckRemoveReservationSingleTrack2Ways");
-            CODebug.Log(LogChannel.Modding, MOD_NAME + " - caller vehicle ID" + vehicleID + " first " + (leaderData.m_leadingVehicle == 0) + " last " + (leaderData.m_trailingVehicle == 0));
-            CODebug.Log(LogChannel.Modding, MOD_NAME + " - back vehicle ID " + backVehicleID + " name " + instance2.m_vehicles.m_buffer[backVehicleID].Info.name);
-            
-            if (backVehicleID == 0)
-                return false;
-
-            Vehicle backVehicleData = instance2.m_vehicles.m_buffer[backVehicleID];
-            PathUnit pathunit = instance.m_pathUnits.m_buffer[backVehicleData.m_path];
-            int posindex = (backVehicleData.m_pathPositionIndex >> 1) + 1;
-
-            if (posindex >= (int)pathunit.m_positionCount)
-            {
-                posindex = 0;
-                uint nextPathUnit = pathunit.m_nextPathUnit;
-                if (nextPathUnit == 0u)
-                {
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - no next path unit ??");
-                    return false;
-                }
-                pathunit = instance.m_pathUnits.m_buffer[nextPathUnit];
-            }
-
-            PathUnit.Position pathpos;
-            CODebug.Log(LogChannel.Modding, MOD_NAME + " - pathunit " + backVehicleData.m_path + " index "+ backVehicleData.m_pathPositionIndex + " " + posindex +" getpos " + pathunit.GetPosition(posindex, out pathpos));
-            
-            if (!pathunit.GetPosition(posindex, out pathpos))
-                return false;
-            uint laneID = PathManager.GetLaneID(pathpos);
-            CODebug.Log(LogChannel.Modding, MOD_NAME + " - laneID " + laneID + " position " + pathpos.m_segment + " " + instance3.m_lanes.m_buffer[(int)((UIntPtr)laneID)].m_segment);
-            NetInfo info = instance3.m_segments.m_buffer[(int)instance3.m_lanes.m_buffer[(int)((UIntPtr)laneID)].m_segment].Info;
-            CODebug.Log(LogChannel.Modding, MOD_NAME + " - check track with name " + info.name + " ID " + laneID);
-
-            if (!info.name.Contains(TARGET_RAIL_NAME) && vehiclesWithReservation.Contains(vehicleID)) //remove any reservation once the train has left the one lane track section
-            {
-                RemoveReservationForVehicle(vehicleID);
-                CODebug.Log(LogChannel.Modding, MOD_NAME + " - cleaned list of " + reservedSegments.Count + " reservations for vehicle " + vehicleID);
-                
-                return true;
-            }
-
-
-
-
-            return false;
-        }
-
-        private bool CheckAddReservationSingleTrack2Ways(ushort vehicleID, Vehicle vehicleData, ref float maxSpeed, uint laneID, uint prevLaneID)
+        private bool CheckSingleTrack2Ways(ushort vehicleID, Vehicle vehicleData, ref float maxSpeed, uint laneID, uint prevLaneID)
         {
             NetManager instance = Singleton<NetManager>.instance;
-            NetInfo info = instance.m_segments.m_buffer[(int)instance.m_lanes.m_buffer[(int)((UIntPtr)laneID)].m_segment].Info;
-            NetInfo info_crt = instance.m_segments.m_buffer[(int)instance.m_lanes.m_buffer[(int)((UIntPtr)prevLaneID)].m_segment].Info;
+            ushort next_segment_id = instance.m_lanes.m_buffer[(int)((UIntPtr)laneID)].m_segment;
+            ushort crt_segment_id = instance.m_lanes.m_buffer[(int)((UIntPtr)prevLaneID)].m_segment;
 
+            ReservationManager instance2 = ReservationManager.instance;
 
             ushort leadingVehicleID = vehicleData.GetFirstVehicle(vehicleID);
 
+            if (ReservationManager.IsSingleTrack2WSegment(crt_segment_id)) //train carriage is on a one lane section
+            {
+                instance2.NotifyReservation(leadingVehicleID, crt_segment_id);
+            }
 
-            /*if (!info_crt.name.Contains(TARGET_RAIL_NAME) && vehiclesWithReservation.Contains(leadingVehicleID) && lookAhead <= 1) //remove any reservation once the train has left the one lane track section
+            if (ReservationManager.IsSingleTrack2WSegment(next_segment_id)) //train carriage will enter a one lane section
             {
-                RemoveReservationForVehicle(leadingVehicleID);
-                /*CODebug.Log(LogChannel.Modding, MOD_NAME + " -----------------------------------");
-                CODebug.Log(LogChannel.Modding, MOD_NAME + " - caller train vehicle name " + vehicleData.Info.name + " ID " + vehicleID);
-                CODebug.Log(LogChannel.Modding, MOD_NAME + " - first vehicle name " + Singleton<VehicleManager>.instance.m_vehicles.m_buffer[leadingVehicleID].Info.name + " ID " + leadingVehicleID);
-                CODebug.Log(LogChannel.Modding, MOD_NAME + " - last vehicle name " + Singleton<VehicleManager>.instance.m_vehicles.m_buffer[vehicleData.GetLastVehicle(vehicleID)].Info.name + " ID " + vehicleData.GetLastVehicle(vehicleID));
-                CODebug.Log(LogChannel.Modding, MOD_NAME + " - cleaned list of " + reservedSegments.Count + " reservations for vehicle " + leadingVehicleID);
-                CODebug.Log(LogChannel.Modding, MOD_NAME + " - check track with name " + info.name + " ID " + laneID +" previous " + info_crt.name+ " ID " + prevLaneID);
-            }*/
-            if (info.name.Contains(TARGET_RAIL_NAME)) //train has entered a one lane section
-            {
-                uint reserved_for_vehicle = CheckReservation(instance.m_lanes.m_buffer[(int)((UIntPtr)laneID)].m_segment);
-                if (reserved_for_vehicle == 0) //reserve track if it is not reserved by another train
+
+                ReservationInfo ri = instance2.GetReservationOnSegment(next_segment_id);
+                if (ri == null) //reserve track if it is not reserved by any train
                 {
-                    /*CODebug.Log(LogChannel.Modding, MOD_NAME + " ----------------------------------- CheckAddReservationSingleTrack2Ways");
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - caller train vehicle name " + vehicleData.Info.name + " ID " + vehicleID);
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - first vehicle name " + Singleton<VehicleManager>.instance.m_vehicles.m_buffer[leadingVehicleID].Info.name + " ID " + leadingVehicleID);
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - last vehicle name " + Singleton<VehicleManager>.instance.m_vehicles.m_buffer[vehicleData.GetLastVehicle(vehicleID)].Info.name + " ID " + vehicleData.GetLastVehicle(vehicleID));
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - started reserving for vehicle " + leadingVehicleID);
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - check track with name " + info.name + " ID " + laneID + " previous " + info_crt.name + " ID " + prevLaneID);
-                    */
-                    ReserveSuccessiveSegments(instance.m_lanes.m_buffer[(int)((UIntPtr)laneID)].m_segment, leadingVehicleID);
+                    SingleTrack2WSection section = instance2.CreateSingleTrack2WSectionFromTrainPath(leadingVehicleID, next_segment_id);
+                    if (!(section != null && ReservationManager.instance.RegisterNewReservation(section, leadingVehicleID)))
+                    {
+                        maxSpeed = 0f;
+                        return true;
+                    }
                 }
+                else if (ReservationManager.IsReservationForTrain(ri, leadingVehicleID)) //track is reserved for this vehicle
+                {
+                    //return true so that CheckNextLane does not interfere (it causes train to sometimes stop)
+                    if (next_segment_id == ri.section.segment_ids[ri.section.segment_ids.Count-1])
+                        return true;
+                }
+                else //section reserved by another train
+                {
+                    SingleTrack2WSection section = instance2.CreateSingleTrack2WSectionFromTrainPath(leadingVehicleID, next_segment_id);
+                    if (!(section != null && ReservationManager.instance.AttemptJoinReservation(ri, section, leadingVehicleID))) //can train follow the previous one?
+                    {
+                        if (!(section != null && ReservationManager.instance.AttemptReservationForNextPendingTrain(ri, section, leadingVehicleID))) //has section been cleared?
+                        {
+                            //not allowed on this track, stop
+                            ReservationManager.instance.EnqueueReservation(ri, leadingVehicleID);
+                            maxSpeed = 0f;
+                            return true;
+                        }
+                    }
+                }
+                
+
             }
 
             return false;
         }
 
-        private bool CheckSingleTrack2Ways(ushort vehicleID, Vehicle vehicleData, ref float maxSpeed, uint laneID, uint prevLaneID, int lookAhead)
-        {
-            NetManager instance = Singleton<NetManager>.instance;
-            NetInfo info = instance.m_segments.m_buffer[(int)instance.m_lanes.m_buffer[(int)((UIntPtr)laneID)].m_segment].Info;
-            NetInfo info_crt = instance.m_segments.m_buffer[(int)instance.m_lanes.m_buffer[(int)((UIntPtr)prevLaneID)].m_segment].Info;
 
-
-            ushort leadingVehicleID = vehicleData.GetFirstVehicle(vehicleID);
-
-
-            if (!info_crt.name.Contains(TARGET_RAIL_NAME) && vehiclesWithReservation.Contains(leadingVehicleID) && lookAhead <= 1) //remove any reservation once the train has left the one lane track section
-            {
-                RemoveReservationForVehicle(leadingVehicleID);
-               /* CODebug.Log(LogChannel.Modding, MOD_NAME + " -----------------------------------");
-                CODebug.Log(LogChannel.Modding, MOD_NAME + " - caller train vehicle name " + vehicleData.Info.name + " ID " + vehicleID);
-                CODebug.Log(LogChannel.Modding, MOD_NAME + " - first vehicle name " + Singleton<VehicleManager>.instance.m_vehicles.m_buffer[leadingVehicleID].Info.name + " ID " + leadingVehicleID);
-                CODebug.Log(LogChannel.Modding, MOD_NAME + " - last vehicle name " + Singleton<VehicleManager>.instance.m_vehicles.m_buffer[vehicleData.GetLastVehicle(vehicleID)].Info.name + " ID " + vehicleData.GetLastVehicle(vehicleID));
-                CODebug.Log(LogChannel.Modding, MOD_NAME + " - cleaned list of " + reservedSegments.Count + " reservations for vehicle " + leadingVehicleID);
-                CODebug.Log(LogChannel.Modding, MOD_NAME + " - check track with name " + info.name + " ID " + laneID +" previous " + info_crt.name+ " ID " + prevLaneID);*/
-            }
-            if (info.name.Contains(TARGET_RAIL_NAME)) //train has entered a one lane section
-            {
-                uint reserved_for_vehicle = CheckReservation(instance.m_lanes.m_buffer[(int)((UIntPtr)laneID)].m_segment);
-                if (reserved_for_vehicle == 0) //reserve track if it is not reserved by another train
-                {
-                    /*if (lookAhead <= 1) //train must book track section far in advance, if it is going fast
-                    {*/
-                        /*CODebug.Log(LogChannel.Modding, MOD_NAME + " -----------------------------------");
-                        CODebug.Log(LogChannel.Modding, MOD_NAME + " - caller train vehicle name " + vehicleData.Info.name + " ID " + vehicleID);
-                        CODebug.Log(LogChannel.Modding, MOD_NAME + " - first vehicle name " + Singleton<VehicleManager>.instance.m_vehicles.m_buffer[leadingVehicleID].Info.name + " ID " + leadingVehicleID);
-                        CODebug.Log(LogChannel.Modding, MOD_NAME + " - last vehicle name " + Singleton<VehicleManager>.instance.m_vehicles.m_buffer[vehicleData.GetLastVehicle(vehicleID)].Info.name + " ID " + vehicleData.GetLastVehicle(vehicleID));
-                        CODebug.Log(LogChannel.Modding, MOD_NAME + " - started reserving for vehicle " + leadingVehicleID);
-                        CODebug.Log(LogChannel.Modding, MOD_NAME + " - check track with name " + info.name + " ID " + laneID + " previous " + info_crt.name + " ID " + prevLaneID);
-                        */
-                        ReserveSuccessiveSegments(instance.m_lanes.m_buffer[(int)((UIntPtr)laneID)].m_segment, leadingVehicleID);
-                    //}
-                }
-                else if (reserved_for_vehicle != leadingVehicleID) //not allowed on this track, stop
-                {
-                    /*CODebug.Log(LogChannel.Modding, MOD_NAME + " -----------------------------------");
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - caller train vehicle name " + vehicleData.Info.name + " ID " + vehicleID);
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - first vehicle name " + Singleton<VehicleManager>.instance.m_vehicles.m_buffer[leadingVehicleID].Info.name + " ID " + leadingVehicleID);
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - last vehicle name " + Singleton<VehicleManager>.instance.m_vehicles.m_buffer[vehicleData.GetLastVehicle(vehicleID)].Info.name + " ID " + vehicleData.GetLastVehicle(vehicleID));
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - vehicle " + leadingVehicleID + " cannot proceed because track reserved by " + reserved_for_vehicle);
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - check track with name " + info.name + " ID " + laneID + " previous " + info_crt.name + " ID " + prevLaneID);
-                    */
-                    maxSpeed = 0f;
-                    return true;
-                }
-                else //track is reserved for this vehicle, return true so that CheckNextLane does not interfere (it causes train to sometimes stop)
-                {
-                    /*CODebug.Log(LogChannel.Modding, MOD_NAME + " -----------------------------------");
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - caller train vehicle name " + vehicleData.Info.name + " ID " + vehicleID);
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - first vehicle name " + Singleton<VehicleManager>.instance.m_vehicles.m_buffer[leadingVehicleID].Info.name + " ID " + leadingVehicleID);
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - last vehicle name " + Singleton<VehicleManager>.instance.m_vehicles.m_buffer[vehicleData.GetLastVehicle(vehicleID)].Info.name + " ID " + vehicleData.GetLastVehicle(vehicleID));
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - track reserved for this vehicle");
-                    CODebug.Log(LogChannel.Modding, MOD_NAME + " - check track with name " + info.name + " ID " + laneID + " previous " + info_crt.name + " ID " + prevLaneID);
-                    */return true;
-                }
-            }
-
-            return false;
-        }
 
         protected void UpdatePathTargetPositions(ushort vehicleID, ref Vehicle vehicleData, Vector3 refPos1, Vector3 refPos2, ushort leaderID, ref Vehicle leaderData, ref int index, int max1, int max2, float minSqrDistanceA, float minSqrDistanceB)
         {
             PathManager instance = Singleton<PathManager>.instance;
             NetManager instance2 = Singleton<NetManager>.instance;
-
-            /*if (vehicleID == 590)
-            {
-                CODebug.Log(LogChannel.Modding, MOD_NAME + " ----------------------------------- " + " UpdatePathTargetPositions");
-                CODebug.Log(LogChannel.Modding, MOD_NAME + " - caller train vehicle name " + vehicleData.Info.name + " ID " + vehicleID + " reversed " + ((leaderData.m_flags & Vehicle.Flags.Reversed) != (Vehicle.Flags)0));
-                CODebug.Log(LogChannel.Modding, MOD_NAME + " - first vehicle " + (vehicleData.m_leadingVehicle == 0) + " last vehicle " + (vehicleData.m_trailingVehicle == 0));
-                CODebug.Log(LogChannel.Modding, MOD_NAME + " - path unit " + vehicleData.m_path + " pos index " + vehicleData.m_pathPositionIndex + " POS COUNT " + instance.m_pathUnits.m_buffer[vehicleData.m_path].m_positionCount +"  next path unit " + instance.m_pathUnits.m_buffer[vehicleData.m_path].m_nextPathUnit);
-            }*/
 
             Vector4 vector = vehicleData.m_targetPos0;
             vector.w = 1000f;
@@ -396,7 +108,6 @@ namespace SingleTrackAI
             }
             uint num4 = PathManager.GetLaneID(position);
             Bezier3 bezier;
-            int lookAhead = 0;
             while (true)
             {
                 if ((b & 1) == 0) //is pathPositionIndex even?
@@ -506,7 +217,6 @@ namespace SingleTrackAI
                 }
                 byte b4 = 0;
 
-                lookAhead++; //SingleTrack2Ways - add a loop counter to know how many segments ahead are inspected
                 if (num4 != laneID)
                 {
                     PathUnit.CalculatePathPositionOffset(laneID, vector, out b4);
@@ -544,15 +254,7 @@ namespace SingleTrackAI
                     if (flag3)
                     {
 
-                        /*CODebug.Log(LogChannel.Modding, MOD_NAME + " ----------------------------------- " + flag2 + " " + lookAhead);
-                        CODebug.Log(LogChannel.Modding, MOD_NAME + " - caller train vehicle name " + vehicleData.Info.name + " ID " + vehicleID + " reversed " + ((leaderData.m_flags & Vehicle.Flags.Reversed) != (Vehicle.Flags)0));
-                        CODebug.Log(LogChannel.Modding, MOD_NAME + " - first vehicle " + (vehicleData.m_leadingVehicle == 0) + " last vehicle " + (vehicleData.m_trailingVehicle == 0));
-                        CODebug.Log(LogChannel.Modding, MOD_NAME + " - path unit " + b);*/
-
-                        /*if (lookAhead <= 1)
-                            this.CheckRemoveReservationSingleTrack2Ways(vehicleID, vehicleData);*/
-
-                        if (!this.CheckSingleTrack2Ways(vehicleID, vehicleData, ref num10, laneID, num4, lookAhead))
+                        if (!this.CheckSingleTrack2Ways(vehicleID, vehicleData, ref num10, laneID, num4))
                             this.CheckNextLane(vehicleID, ref vehicleData, ref num10, position2, laneID, b4, position, num4, position.m_offset, bezier);
                     }
                     if (flag2 && (num10 < 0.01f || (instance2.m_segments.m_buffer[(int)position2.m_segment].m_flags & (NetSegment.Flags.Collapsed | NetSegment.Flags.Flooded)) != NetSegment.Flags.None))
