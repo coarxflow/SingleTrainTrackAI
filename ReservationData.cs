@@ -52,8 +52,8 @@ namespace SingleTrackAI
 
         public void Recycle()
         {
-            ID_counter++;
-            ID = ID_counter;
+            //ID_counter++;
+            //ID = ID_counter;
 
             train_ids.Clear();
             //pending_train_ids.Clear();

@@ -30,7 +30,7 @@ namespace SingleTrackAI
 
             if (ReservationManager.IsSingleTrack2WSegment(crt_segment_id)) //train carriage is on a one lane section
             {
-                instance2.NotifyReservation(leadingVehicleID, crt_segment_id);
+                instance2.NotifyReservation(leadingVehicleID, crt_segment_id, true);
             }
 
             if (ReservationManager.IsSingleTrack2WSegment(next_segment_id)) //train carriage will enter a one lane section
@@ -40,14 +40,36 @@ namespace SingleTrackAI
                 if (ri == null) //reserve track if it is not reserved by any train
                 {
                     SingleTrack2WSection section = instance2.CreateSingleTrack2WSectionFromTrainPath(leadingVehicleID, next_segment_id);
-                    if (!(section != null && ReservationManager.instance.RegisterNewReservation(section, leadingVehicleID)))
+                    if(section != null)
                     {
-                        maxSpeed = 0f;
-                        return true;
+                        ushort blocking_segmentID = ReservationManager.instance.RegisterNewReservation(section, leadingVehicleID);
+                        if(blocking_segmentID != 0) //reservation blocked by a further segment already reserved, get this reservation
+                        {
+                            ri = instance2.GetReservationOnSegment(blocking_segmentID);
+                            /*ReservationManager.instance.EnqueueReservation(ri, leadingVehicleID);
+                            maxSpeed = 0f;
+                            return true;*/
+                        }
                     }
                 }
-                else if (ReservationManager.IsReservationForTrain(ri, leadingVehicleID)) //track is reserved for this vehicle
+
+                if(ri == null) //should not happen
                 {
+                    return false;
+                }
+
+                if (ReservationManager.IsReservationForTrain(ri, leadingVehicleID)) //track is reserved for this vehicle
+                {
+                    instance2.NotifyReservation(leadingVehicleID, crt_segment_id, false);
+
+                    //reset wait counter
+                    if((vehicleData.m_flags2 & Vehicle.Flags2.Yielding) != (Vehicle.Flags2) 0)
+                    {
+                        vehicleData.m_flags2 &= ~Vehicle.Flags2.Yielding;
+                        vehicleData.m_waitCounter = 0;
+                    }
+                    
+
                     //return true so that CheckNextLane does not interfere (it causes train to sometimes stop)
                     if (next_segment_id == ri.section.segment_ids[ri.section.segment_ids.Count-1])
                         return true;
@@ -62,6 +84,22 @@ namespace SingleTrackAI
                             //not allowed on this track, stop
                             ReservationManager.instance.EnqueueReservation(ri, leadingVehicleID);
                             maxSpeed = 0f;
+
+                            //increment wait counter
+                            /*vehicleData.m_flags2 |= Vehicle.Flags2.Yielding;
+                            vehicleData.m_waitCounter++;*/
+
+                            //set traffic light state
+                            /*NetSegment seg = instance.m_segments.m_buffer[crt_segment_id];
+                            RoadBaseAI.SetTrafficLightState(seg.m_endNode, ref seg, 0, RoadBaseAI.TrafficLightState.Red, RoadBaseAI.TrafficLightState.Red, true, false);
+                            RoadBaseAI.SetTrafficLightState(seg.m_startNode, ref seg, 0, RoadBaseAI.TrafficLightState.Red, RoadBaseAI.TrafficLightState.Red, true, false);
+                            instance.m_nodes.m_buffer[seg.m_endNode].m_flags |= NetNode.Flags.TrafficLights;
+                            instance.m_nodes.m_buffer[seg.m_startNode].m_flags |= NetNode.Flags.TrafficLights;
+
+                            /*if (vehicleID == leadingVehicleID)
+                            {
+                                instance.m_segments.m_buffer[crt_segment_id].m_trafficLightState0 = (byte) RoadBaseAI.TrafficLightState.Red;
+                            }*/
                             return true;
                         }
                     }
@@ -357,6 +395,11 @@ namespace SingleTrackAI
                     vehicleData.m_pathPositionIndex = b;
                     vehicleData.m_lastPathOffset = b2;
                     vehicleData.m_flags = ((vehicleData.m_flags & ~(Vehicle.Flags.OnGravel | Vehicle.Flags.Underground | Vehicle.Flags.Transition)) | info.m_setVehicleFlags);
+                    if ((vehicleData.m_flags2 & Vehicle.Flags2.Yielding) != (Vehicle.Flags2)0)
+                    {
+                        vehicleData.m_flags2 &= ~Vehicle.Flags2.Yielding;
+                        vehicleData.m_waitCounter = 0;
+                    }
                 }
                 position = position2;
                 num4 = laneID;
@@ -410,6 +453,8 @@ namespace SingleTrackAI
             {
                 if (!instance.m_lanes.m_buffer[(int)((UIntPtr)laneID)].CheckSpace(1000f, vehicleID))
                 {
+                    vehicleData.m_flags2 |= Vehicle.Flags2.Yielding;
+                    vehicleData.m_waitCounter = 0;
                     maxSpeed = 0f;
                     return;
                 }
@@ -428,6 +473,8 @@ namespace SingleTrackAI
                     segment.a += (segment.b - segment.a).normalized * 2.5f;
                     if (SingleTrainTrackAI.CheckOverlap(vehicleID, ref vehicleData, segment, vehicleID))
                     {
+                        vehicleData.m_flags2 |= Vehicle.Flags2.Yielding;
+                        vehicleData.m_waitCounter = 0;
                         maxSpeed = 0f;
                         return;
                     }
@@ -435,6 +482,8 @@ namespace SingleTrackAI
                 segment = new Segment3(vector, bezier.d);
                 if (segment.LengthSqr() >= 1f && SingleTrainTrackAI.CheckOverlap(vehicleID, ref vehicleData, segment, vehicleID))
                 {
+                    vehicleData.m_flags2 |= Vehicle.Flags2.Yielding;
+                    vehicleData.m_waitCounter = 0;
                     maxSpeed = 0f;
                     return;
                 }
@@ -461,20 +510,23 @@ namespace SingleTrackAI
                     if (num2 == num3)
                     {
                         NetNode.Flags flags = instance.m_nodes.m_buffer[(int)num2].m_flags;
-                        if ((flags & NetNode.Flags.TrafficLights) != NetNode.Flags.None)
+                        NetLane.Flags flags2 = (NetLane.Flags)instance.m_lanes.m_buffer[(int)((UIntPtr)prevLaneID)].m_flags;
+                        bool flag = (flags & NetNode.Flags.TrafficLights) != NetNode.Flags.None;
+                        bool flag2 = (flags2 & (NetLane.Flags.YieldStart | NetLane.Flags.YieldEnd)) != NetLane.Flags.None && (flags & (NetNode.Flags.Junction | NetNode.Flags.TrafficLights | NetNode.Flags.OneWayIn)) == NetNode.Flags.Junction;
+                        if (flag)
                         {
                             uint currentFrameIndex = Singleton<SimulationManager>.instance.m_currentFrameIndex;
                             uint num4 = (uint)(((int)num3 << 8) / 32768);
                             uint num5 = currentFrameIndex - num4 & 255u;
                             RoadBaseAI.TrafficLightState trafficLightState;
                             RoadBaseAI.TrafficLightState pedestrianLightState;
-                            bool flag;
+                            bool flag3;
                             bool pedestrians;
-                            RoadBaseAI.GetTrafficLightState(num3, ref instance.m_segments.m_buffer[(int)prevPos.m_segment], currentFrameIndex - num4, out trafficLightState, out pedestrianLightState, out flag, out pedestrians);
-                            if (!flag && num5 >= 196u)
+                            RoadBaseAI.GetTrafficLightState(num3, ref instance.m_segments.m_buffer[(int)prevPos.m_segment], currentFrameIndex - num4, out trafficLightState, out pedestrianLightState, out flag3, out pedestrians);
+                            if (!flag3 && num5 >= 196u)
                             {
-                                flag = true;
-                                RoadBaseAI.SetTrafficLightState(num3, ref instance.m_segments.m_buffer[(int)prevPos.m_segment], currentFrameIndex - num4, trafficLightState, pedestrianLightState, flag, pedestrians);
+                                flag3 = true;
+                                RoadBaseAI.SetTrafficLightState(num3, ref instance.m_segments.m_buffer[(int)prevPos.m_segment], currentFrameIndex - num4, trafficLightState, pedestrianLightState, flag3, pedestrians);
                             }
                             if (trafficLightState != RoadBaseAI.TrafficLightState.RedToGreen)
                             {
@@ -482,21 +534,38 @@ namespace SingleTrackAI
                                 {
                                     if (trafficLightState == RoadBaseAI.TrafficLightState.Red)
                                     {
+                                        vehicleData.m_flags2 |= Vehicle.Flags2.Yielding;
+                                        vehicleData.m_waitCounter = 0;
                                         maxSpeed = 0f;
                                         return;
                                     }
                                 }
                                 else if (num5 >= 30u)
                                 {
+                                    vehicleData.m_flags2 |= Vehicle.Flags2.Yielding;
+                                    vehicleData.m_waitCounter = 0;
                                     maxSpeed = 0f;
                                     return;
                                 }
                             }
                             else if (num5 < 60u)
                             {
+                                vehicleData.m_flags2 |= Vehicle.Flags2.Yielding;
+                                vehicleData.m_waitCounter = 0;
                                 maxSpeed = 0f;
                                 return;
                             }
+                        }
+                        if (flag2 && (vehicleData.m_flags2 & Vehicle.Flags2.Yielding) != (Vehicle.Flags2)0)
+                        {
+                            vehicleData.m_waitCounter = (byte)Mathf.Min((int)(vehicleData.m_waitCounter + 1), 4);
+                            if (vehicleData.m_waitCounter < 4)
+                            {
+                                maxSpeed = 0f;
+                                return;
+                            }
+                            vehicleData.m_flags2 &= ~Vehicle.Flags2.Yielding;
+                            vehicleData.m_waitCounter = 0;
                         }
                     }
                 }

@@ -19,7 +19,7 @@ namespace SingleTrackAI
         const string TARGET_RAIL_NAME = "Rail1L2W";
         const int CLEAR_RESERVATION_AFTER = 100;
         const int DELETE_RESERVATION_AFTER = 200;
-        const int DEFINITIVE_DELETE_RESERVATION_AFTER = 1000;
+        const int DEFINITIVE_DELETE_RESERVATION_AFTER = 500;
 
         public static bool IsSingleTrack2WSegment(ushort segment_id)
         {
@@ -65,8 +65,30 @@ namespace SingleTrackAI
                 //CODebug.Log(LogChannel.Modding, Mod.modName + " - pathunit " + backVehicleData.m_path + " index " + backVehicleData.m_pathPositionIndex + " " + posindex + " getpos " + pathunit.GetPosition(posindex, out pathpos));
                 if (!pathunit.GetPosition(posindex, out pathpos))
                     return null;
-
+                
+                //activate signal at the end of the single track section
                 NetSegment seg = instance3.m_segments.m_buffer[pathpos.m_segment];
+                if (Mod.allowSpawnSignals && !seg.Info.name.Contains(TARGET_RAIL_NAME))
+                {
+                    NetNode node1 = instance3.m_nodes.m_buffer[seg.m_startNode];
+                    NetNode node2 = instance3.m_nodes.m_buffer[seg.m_endNode];
+                    NetLane lane = instance3.m_lanes.m_buffer[seg.m_lanes];
+
+                    if ((node1.m_flags & NetNode.Flags.Junction) != (NetNode.Flags)0)
+                    {
+                        
+
+                        seg.m_flags |= NetSegment.Flags.YieldStart;
+                        
+                    }
+                    if ((node2.m_flags & NetNode.Flags.Junction) != (NetNode.Flags)0)
+                    {
+
+                        seg.m_flags |= NetSegment.Flags.YieldEnd;
+                    }
+                    seg.UpdateLanes(pathpos.m_segment, true);
+                    instance3.m_segments.m_buffer[pathpos.m_segment] = seg;
+                }
 
                 if (!found_inspected_segment)
                 {
@@ -140,7 +162,7 @@ namespace SingleTrackAI
             return ri.train_ids.Contains(leading_vehicle_id);
         }
 
-        public bool RegisterNewReservation(SingleTrack2WSection section, ushort leading_vehicle_id)
+        public ushort RegisterNewReservation(SingleTrack2WSection section, ushort leading_vehicle_id)
         {
             ReservationInfo ri = new ReservationInfo();
             ri.section = section;
@@ -149,7 +171,7 @@ namespace SingleTrackAI
 
         }
 
-        private bool RegisterReservation(ReservationInfo ri, ushort leading_vehicle_id, bool recycle, int recycle_id)
+        private ushort RegisterReservation(ReservationInfo ri, ushort leading_vehicle_id, bool recycle, int recycle_id)
         {
        
 
@@ -163,15 +185,19 @@ namespace SingleTrackAI
                 }
             }
 
-            /*if(reservation_prevented_at != -1) //revert reserved segments (safe approach)
+            if (reservation_prevented_at != -1)
             {
-                m_data.RemoveReservation(ri.ID);
-                return false;
-            }*/
-            if (reservation_prevented_at != -1) //delete further segments from reservation (go as far as possible approach)
-            {
-                ri.section.segment_ids.RemoveRange(reservation_prevented_at, ri.section.segment_ids.Count - reservation_prevented_at);
+                if (!Mod.allowGoAsFarAsPossible) //revert reserved segments (safe approach)
+                {
+                    m_data.RemoveReservation(ri.ID);
+                    return ri.section.segment_ids[reservation_prevented_at];
+                }
+                else //delete further segments from reservation (go as far as possible approach)
+                {
+                    ri.section.segment_ids.RemoveRange(reservation_prevented_at, ri.section.segment_ids.Count - reservation_prevented_at);
+                }
             }
+
             //else
             {
                 ri.status = ReservationStatus.BeforeTrainEnter;
@@ -197,7 +223,7 @@ namespace SingleTrackAI
                     m_data.reservations.Add(ri);
                 }
 
-                return true;
+                return 0;
             }
 
 
@@ -205,6 +231,9 @@ namespace SingleTrackAI
 
         public bool AttemptJoinReservation(ReservationInfo current_reservation, SingleTrack2WSection new_reservation, ushort train_id)
         {
+            if (!Mod.allowFollowing)
+                return false;
+
             if(!current_reservation.refuse_additional_trains && current_reservation.section.Compare(new_reservation))
             {
                 current_reservation.train_ids.Add(train_id);
@@ -226,6 +255,10 @@ namespace SingleTrackAI
 
         public void EnqueueReservation(ReservationInfo current_reservation, ushort train_id)
         {
+            if (!Mod.allowPriorityQueue)
+                return;
+
+
             bool update = false;
 
             if (!current_reservation.pending_train_ids.Contains(train_id))
@@ -271,7 +304,7 @@ namespace SingleTrackAI
             return false;
         }
 
-        public void NotifyReservation(ushort vehicle_id, ushort segment_id)
+        public void NotifyReservation(ushort vehicle_id, ushort segment_id, bool train_on_segment)
         {
             int s_index = -1;
             for (int i = 0; i < m_data.reservedSegments.Count; i++)
@@ -300,16 +333,9 @@ namespace SingleTrackAI
                 if (m_data.reservations[r_index].ID == reservation_id)
                 {
                     ReservationInfo ri = m_data.reservations[r_index];
-                    switch (ri.status)
+                    if (train_on_segment && ri.status == ReservationStatus.BeforeTrainEnter)
                     {
-                        case ReservationStatus.BeforeTrainEnter:
-                            if (m_data.reservations[r_index].train_ids.Contains(vehicle_id))
-                            {
-                                ri.status = ReservationStatus.TrainOnSection;
-                            }
-                            break;
-                        default:
-                            break;
+                       ri.status = ReservationStatus.TrainOnSection;
                     }
                     ri.clearing_timer = 0;
                     m_data.reservations[r_index] = ri;
@@ -367,32 +393,31 @@ namespace SingleTrackAI
             for (int r_index = m_data.reservations.Count-1; r_index >= 0; r_index--)
             {
                 ReservationInfo ri = m_data.reservations[r_index];
-                if (ri.clearing_timer > CLEAR_RESERVATION_AFTER)
+                if (ri.clearing_timer > CLEAR_RESERVATION_AFTER && ri.status != ReservationStatus.BeforeTrainEnter)
                 {
                     ri.status = ReservationStatus.ClearingTrack;
                 }
 
-                switch (ri.status)
-                {
-                    case ReservationStatus.TrainOnSection:
-                    case ReservationStatus.ClearingTrack:
-                    case ReservationStatus.RecycleForPendingTrain:
-                        ri.clearing_timer++;
-                        break;
-                    default:
-                        break;
-
-                }
+                ri.clearing_timer++;
 
                 if(ri.clearing_timer > DELETE_RESERVATION_AFTER)
                 {
+                    //check if there is a train in the pending list, and let some time for this train to do teh reservation
                     if (ri.status != ReservationStatus.RecycleForPendingTrain && ri.clearing_timer < DEFINITIVE_DELETE_RESERVATION_AFTER &&  m_data.reservations[r_index].pending_train_ids.Count > 0)
                     {
                         ri.status = ReservationStatus.RecycleForPendingTrain;
-                        ri.clearing_timer = 0; //prevent removal on next frame
                         m_data.reservations[r_index] = ri;
                     }
-                    else
+                    //first pending train did not reserve (it could have been removed) go to the next pending train
+                    else if (ri.clearing_timer >= DEFINITIVE_DELETE_RESERVATION_AFTER && m_data.reservations[r_index].pending_train_ids.Count > 0)
+                    {
+                        m_data.reservations[r_index].pending_train_ids.RemoveAt(0);
+                        ri.clearing_timer = DELETE_RESERVATION_AFTER; //leave some time for next pending train to enter
+                        m_data.reservations[r_index] = ri;
+                    }
+
+                    //delete reservation object if no pending reservation
+                    if ((ri.status == ReservationStatus.ClearingTrack && ri.clearing_timer >= DELETE_RESERVATION_AFTER) || (ri.status == ReservationStatus.RecycleForPendingTrain && m_data.reservations[r_index].pending_train_ids.Count == 0 && ri.clearing_timer >= DELETE_RESERVATION_AFTER) || ri.clearing_timer >= DEFINITIVE_DELETE_RESERVATION_AFTER)
                     {
                         m_data.RemoveReservation(ri.ID);
                     }
