@@ -63,15 +63,15 @@ namespace SingleTrackAI
                     instance2.NotifyReservation(leadingVehicleID, crt_segment_id, false);
 
                     //reset wait counter
-                    if((vehicleData.m_flags2 & Vehicle.Flags2.Yielding) != (Vehicle.Flags2) 0)
+                   /* if((vehicleData.m_flags2 & Vehicle.Flags2.Yielding) != (Vehicle.Flags2) 0)
                     {
                         vehicleData.m_flags2 &= ~Vehicle.Flags2.Yielding;
                         vehicleData.m_waitCounter = 0;
-                    }
+                    }*/
                     
 
-                    //return true so that CheckNextLane does not interfere (it causes train to sometimes stop)
-                    if (next_segment_id == ri.section.segment_ids[ri.section.segment_ids.Count-1])
+                    //return true so that CheckNextLane does not interfere (it causes train to stop when going from one track to double track with a train waiting in the opposite direction)
+                    if (Mod.noCheckOverlapOnLastSegment && next_segment_id == ri.section.segment_ids[ri.section.segment_ids.Count-1])
                         return true;
                 }
                 else //section reserved by another train
@@ -111,8 +111,25 @@ namespace SingleTrackAI
             return false;
         }
 
+        private void NotifySingleTrack2Ways(ushort vehicleID, Vehicle vehicleData, uint laneID)
+        {
+            NetManager instance = Singleton<NetManager>.instance;
+            ushort crt_segment_id = instance.m_lanes.m_buffer[(int)((UIntPtr)laneID)].m_segment;
+
+            ReservationManager instance2 = ReservationManager.instance;
+
+            ushort leadingVehicleID = vehicleData.GetFirstVehicle(vehicleID);
+
+            if (ReservationManager.IsSingleTrack2WSegment(crt_segment_id)) //train carriage is on a one lane section
+            {
+                instance2.NotifyReservation(leadingVehicleID, crt_segment_id, true);
+            }
+
+            //CODebug.Log(LogChannel.Modding, Mod.modName + " - notify for vehicle " + vehicleID + " on segment " + crt_segment_id +" at frame "+Singleton<SimulationManager>.instance.m_currentFrameIndex);
+        }
 
 
+        //from source code
         protected void UpdatePathTargetPositions(ushort vehicleID, ref Vehicle vehicleData, Vector3 refPos1, Vector3 refPos2, ushort leaderID, ref Vehicle leaderData, ref int index, int max1, int max2, float minSqrDistanceA, float minSqrDistanceB)
         {
             PathManager instance = Singleton<PathManager>.instance;
@@ -145,6 +162,8 @@ namespace SingleTrackAI
                 return;
             }
             uint num4 = PathManager.GetLaneID(position);
+            //try to notify for all vehicles composing the train. however, UpdatePathTargetPositions is not called when train is stopped
+            //this.NotifySingleTrack2Ways(vehicleID, vehicleData, num4);
             Bezier3 bezier;
             while (true)
             {
@@ -255,7 +274,7 @@ namespace SingleTrackAI
                 }
                 byte b4 = 0;
 
-                if (num4 != laneID)
+                if (num4 != laneID) //num4 is last path lane, laneID is the new one. This triggers checkNextLane.
                 {
                     PathUnit.CalculatePathPositionOffset(laneID, vector, out b4);
                     bezier = default(Bezier3);
@@ -263,6 +282,7 @@ namespace SingleTrackAI
                     float num9;
                     this.CalculateSegmentPosition(vehicleID, ref vehicleData, position, num4, position.m_offset, out bezier.a, out vector3, out num9);
                     bool flag2;
+                    //checkNextLane only for the vehicle in front of the train
                     if ((leaderData.m_flags & Vehicle.Flags.Reversed) != (Vehicle.Flags)0)
                     {
                         flag2 = (vehicleData.m_trailingVehicle == 0);
@@ -436,7 +456,7 @@ namespace SingleTrackAI
             }
         }
 
-
+        //from source code
         private void CheckNextLane(ushort vehicleID, ref Vehicle vehicleData, ref float maxSpeed, PathUnit.Position position, uint laneID, byte offset, PathUnit.Position prevPos, uint prevLaneID, byte prevOffset, Bezier3 bezier)
         {
             NetManager instance = Singleton<NetManager>.instance;
@@ -572,7 +592,7 @@ namespace SingleTrackAI
             }
         }
 
-
+        //from source code
         private static bool CheckOverlap(ushort vehicleID, ref Vehicle vehicleData, Segment3 segment, ushort ignoreVehicle)
         {
             VehicleManager instance = Singleton<VehicleManager>.instance;
@@ -603,6 +623,7 @@ namespace SingleTrackAI
             return result;
         }
 
+        //from source code
         private static ushort CheckOverlap(ushort vehicleID, ref Vehicle vehicleData, Segment3 segment, ushort ignoreVehicle, ushort otherID, ref Vehicle otherData, ref bool overlap, Vector3 min, Vector3 max)
         {
             if (ignoreVehicle == 0 || (otherID != ignoreVehicle && otherData.m_leadingVehicle != ignoreVehicle && otherData.m_trailingVehicle != ignoreVehicle))

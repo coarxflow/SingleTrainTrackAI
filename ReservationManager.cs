@@ -19,7 +19,7 @@ namespace SingleTrackAI
         const string TARGET_RAIL_NAME = "Rail1L2W";
         const int CLEAR_RESERVATION_AFTER = 100;
         const int DELETE_RESERVATION_AFTER = 200;
-        const int DEFINITIVE_DELETE_RESERVATION_AFTER = 500;
+        const int DEFINITIVE_DELETE_RESERVATION_AFTER = 1000;
 
         public static bool IsSingleTrack2WSegment(ushort segment_id)
         {
@@ -330,7 +330,7 @@ namespace SingleTrackAI
 
             for (int r_index = 0; r_index < m_data.reservations.Count; r_index++)
             {
-                if (m_data.reservations[r_index].ID == reservation_id)
+                if (m_data.reservations[r_index].ID == reservation_id && m_data.reservations[r_index].train_ids.Contains(vehicle_id))
                 {
                     ReservationInfo ri = m_data.reservations[r_index];
                     if (train_on_segment && ri.status == ReservationStatus.BeforeTrainEnter)

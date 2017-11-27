@@ -130,7 +130,14 @@ namespace SingleTrackAI
             xw.WriteStartElement("AutoSpawnSignals");
             xw.WriteAttributeString("Value", Mod.allowSpawnSignals.ToString());
             xw.WriteEndElement();
-            
+
+            xw.WriteComment("Set this to true in case trains briefly stop when leaving a single track section with a train waiting in the other direction.");
+            xw.WriteComment("However, this can cause train to overlap with another train.");
+            xw.WriteStartElement("NoCheckOverlapOnLastSegment");
+            xw.WriteAttributeString("Value", Mod.noCheckOverlapOnLastSegment.ToString());
+            xw.WriteEndElement();
+
+
 
             xw.WriteEndElement();
 
@@ -187,6 +194,13 @@ namespace SingleTrackAI
                                     Mod.allowSpawnSignals = value;
                                 }
                                 break;
+                            case "NoCheckOverlapOnLastSegment":
+                                if (bool.TryParse(val, out value))
+                                {
+                                    Mod.noCheckOverlapOnLastSegment = value;
+                                }
+                                break;
+
                         }
                     }
                 }

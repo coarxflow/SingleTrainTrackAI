@@ -7,7 +7,7 @@ namespace SingleTrackAI
 		
 		public static string modName = "SingleTrainTrackAI";
 		public static String modID = "SingleTrainTrackAI";
-		public static string version = "1.1.2";
+		public static string version = "1.1.3";
 		
 		public string Name {
 			get { return modName; }
@@ -22,6 +22,7 @@ namespace SingleTrackAI
         public static bool allowFollowing = true;
         public static bool allowGoAsFarAsPossible = false;
         public static bool allowSpawnSignals = false;
+        public static bool noCheckOverlapOnLastSegment = false;
     }
 }
 
