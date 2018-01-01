@@ -13,6 +13,10 @@ namespace SingleTrackAI
     {
         public List<ushort> segment_ids = new List<ushort>();
 
+        public bool containStopStation = false;
+
+        //public int notFromPathSegmentsStartingAt = -1;
+
         public bool Compare(SingleTrack2WSection other)
         {
             return this.segment_ids[0] == other.segment_ids[0] && this.segment_ids[this.segment_ids.Count - 1] == other.segment_ids[other.segment_ids.Count - 1];
@@ -24,6 +28,9 @@ namespace SingleTrackAI
         Ineffective,
         BeforeTrainEnter,
         TrainOnSection,
+        TrainEnterOrSkipStation,
+        TrainAtStation,
+        TrainExitStation,
         ClearingTrack,
         RecycleForPendingTrain
     }
@@ -40,7 +47,8 @@ namespace SingleTrackAI
         public SingleTrack2WSection section;
         public List<ushort> train_ids = new List<ushort>();
         public List<ushort> pending_train_ids = new List<ushort>();
-        public bool refuse_additional_trains = false;
+        public List<ushort> train_at_station_ids = new List<ushort>();
+        public bool refuse_following_trains = false;
 
         public uint clearing_timer = 0;
 
@@ -57,7 +65,7 @@ namespace SingleTrackAI
 
             train_ids.Clear();
             //pending_train_ids.Clear();
-            refuse_additional_trains = false;
+            refuse_following_trains = false;
             section = null;
             clearing_timer = 0;
             status = ReservationStatus.Ineffective;
