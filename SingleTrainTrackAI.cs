@@ -14,10 +14,6 @@ namespace SingleTrackAI
     public class SingleTrainTrackAI : VehicleAI
     {
 
-        public static String MOD_NAME = "SingleTrainTrackAI";
-
-        
-
         private bool CheckSingleTrack2Ways(ushort vehicleID, Vehicle vehicleData, ref float maxSpeed, uint laneID, uint prevLaneID, ref bool mayNeedSingleTrackStationFix)
         {
             NetManager instance = Singleton<NetManager>.instance;
@@ -36,26 +32,34 @@ namespace SingleTrackAI
                 ri = instance2.GetReservationOnSegment(next_segment_id);
 
 
+            CreateReservation:
             if (ReservationManager.IsSingleTrack2WSegment(next_segment_id)) //train carriage will enter a one lane section
             {
                 if (ri == null) //reserve track if it is not reserved by any train
                 {
-                    SingleTrack2WSection section = instance2.CreateSingleTrack2WSectionFromTrainPath(leadingVehicleID, next_segment_id);
-                    if (section != null)
+                    ushort blocking_segmentID = 0;
+
+                    ri = ReservationManager.instance.CheckCachedReservation(next_segment_id, leadingVehicleID, ref blocking_segmentID);
+
+                    if (ri == null) //no cached reservation found, create one
                     {
-                        ushort blocking_segmentID = 0;
-                        ri = ReservationManager.instance.RegisterNewReservation(section, leadingVehicleID, ref blocking_segmentID);
-                        if (blocking_segmentID != 0) //reservation blocked by a further segment already reserved, get this reservation
+                        SingleTrack2WSection section = instance2.CreateSingleTrack2WSectionFromTrainPath(leadingVehicleID, next_segment_id);
+                        if (section != null)
                         {
-                            ri = instance2.GetReservationOnSegment(blocking_segmentID);
-                            /*ReservationManager.instance.EnqueueReservation(ri, leadingVehicleID);
-                            maxSpeed = 0f;
-                            return true;*/
+                            ri = ReservationManager.instance.RegisterNewReservation(section, leadingVehicleID, ref blocking_segmentID);
                         }
-                        else
-                        {
-                            mayNeedSingleTrackStationFix = true; //track reserved by this train
-                        }
+                    }
+
+                    if (blocking_segmentID != 0) //reservation blocked by a further segment already reserved, get this reservation
+                    {
+                        ri = instance2.GetReservationOnSegment(blocking_segmentID);
+                        /*ReservationManager.instance.EnqueueReservation(ri, leadingVehicleID);
+                        maxSpeed = 0f;
+                        return true;*/
+                    }
+                    else
+                    {
+                        mayNeedSingleTrackStationFix = true; //track reserved by this train
                     }
                 }
             }
@@ -83,6 +87,15 @@ namespace SingleTrackAI
                 }
                 else //section reserved by another train
                 {
+                    //train has spawned on a station reserved to another train, though case...
+                    //attempt destroy reservation and give priority to this train
+                    if(ReservationManager.IsSingleTrackStation(crt_segment_id))
+                    {
+                        ReservationManager.instance.m_data.RemoveReservation(ri.ID, true);
+                        ri = null;
+                        goto CreateReservation;
+                    }
+
                     SingleTrack2WSection section = instance2.CreateSingleTrack2WSectionFromTrainPath(leadingVehicleID, next_segment_id);
                     if (!(section != null && ReservationManager.instance.AttemptJoinReservation(ri, section, leadingVehicleID))) //can train follow the previous one?
                     {
@@ -294,12 +307,7 @@ namespace SingleTrackAI
                     bool flag3 = flag2 && b2 == 0;
                     Vector3 vector4;
                     float num10;
-                    CODebug.Log(LogChannel.Modding," ------------------- carriage " + vehicleID + " leading "+ vehicleData.GetFirstVehicle(vehicleID));
-
-            
                     this.CalculateSegmentPosition(vehicleID, ref vehicleData, position2, laneID, b4, out bezier.d, out vector4, out num10);
-                    CODebug.Log(LogChannel.Modding, Mod.modName + " - maxspeed after CalculateSegmentPosition " + num10 + " for carriage " + vehicleID);
-
                     if (position.m_offset == 0)
                     {
                         vector3 = -vector3;
@@ -316,14 +324,10 @@ namespace SingleTrackAI
                     if (flag3)
                     {
                         bool mayNeedFix = false;
-                        CODebug.Log(LogChannel.Modding, Mod.modName + " - maxspeed before CheckSingleTrack2Ways " + num10 + " for carriage " + vehicleID);
                         if (!this.CheckSingleTrack2Ways(vehicleID, vehicleData, ref num10, laneID, num4, ref mayNeedFix))
                         {
-                            CODebug.Log(LogChannel.Modding, Mod.modName + " - maxspeed after CheckSingleTrack2Ways " + num10 + " for carriage " + vehicleID);
                             float savedMaxSpeed = num10;
                             this.CheckNextLane(vehicleID, ref vehicleData, ref num10, position2, laneID, b4, position, num4, position.m_offset, bezier);
-                            CODebug.Log(LogChannel.Modding, Mod.modName + " - maxspeed after CheckNextLane " + num10 + " mayNeedFix "+mayNeedFix+" for carriage " + vehicleID);
-
 
                             //address bug where some train are blocked after reversing at a single train track station
                             if (Mod.fixReverseTrainSingleTrackStation && mayNeedFix && num10 < 0.01f)
@@ -332,7 +336,7 @@ namespace SingleTrackAI
                                 if ((leaderData.m_flags & Vehicle.Flags.Reversed) != (Vehicle.Flags)0)
                                 {
                                     //vehiclePreviouslyReservingSpace = vehicleData.GetFirstVehicle(vehicleID);
-                                    CODebug.Log(LogChannel.Modding, Mod.modName + " - attempt fix(1) " + instance2.m_lanes.m_buffer[(int)((UIntPtr)laneID)].CheckSpace(1000f, vehiclePreviouslyReservingSpace));
+                                    //CODebug.Log(LogChannel.Modding, Mod.modName + " - attempt fix(1) " + instance2.m_lanes.m_buffer[(int)((UIntPtr)laneID)].CheckSpace(1000f, vehiclePreviouslyReservingSpace));
 
                                     //try checkspace again with carriage at the other end of the train (the one who has, by supposition, reserved the space previously)
                                     if (instance2.m_lanes.m_buffer[(int)((UIntPtr)laneID)].CheckSpace(1000f, vehiclePreviouslyReservingSpace))
@@ -342,24 +346,12 @@ namespace SingleTrackAI
                                     else
                                     {
                                         Segment3 segment = new Segment3(bezier.Position(0.5f), bezier.d);
-                                        CODebug.Log(LogChannel.Modding, Mod.modName + " - attempt fix(2) " + CheckOverlap(vehicleID, ref vehicleData, segment, vehiclePreviouslyReservingSpace));
+                                        //CODebug.Log(LogChannel.Modding, Mod.modName + " - attempt fix(2) " + CheckOverlap(vehicleID, ref vehicleData, segment, vehiclePreviouslyReservingSpace));
 
                                         if (CheckOverlap(vehicleID, ref vehicleData, segment, vehiclePreviouslyReservingSpace))
                                             num10 = savedMaxSpeed;
                                     }
                                 }
-                                else
-                                {
-                                    //vehiclePreviouslyReservingSpace = vehicleData.GetFirstVehicle(vehicleID);
-                                    /*Segment3 segment = new Segment3(bezier.Position(0.5f), bezier.d);
-                                    CODebug.Log(LogChannel.Modding, Mod.modName + " - attempt fix(2) " + CheckOverlap(vehicleID, ref vehicleData, segment, vehiclePreviouslyReservingSpace));
-                                
-                                    if (CheckOverlap(vehicleID, ref vehicleData, segment, vehiclePreviouslyReservingSpace))
-                                        num10 = savedMaxSpeed;*/
-                                
-                                    //vehiclePreviouslyReservingSpace = vehicleData.GetLastVehicle(vehicleID);
-                                }
-                                CODebug.Log(LogChannel.Modding, Mod.modName + " - maxspeed after fix " + num10 + " for carriage " + vehicleID);
 
                             }
 
@@ -391,7 +383,6 @@ namespace SingleTrackAI
                             num13 /= num11;
                         }
                         num10 = Mathf.Min(num10, this.CalculateTargetSpeed(vehicleID, ref vehicleData, 1000f, num13));
-                        CODebug.Log(LogChannel.Modding, Mod.modName + " - maxspeed after CalculateTargetSpeed " + num10 + " for carriage " + vehicleID);
                     
                         while (b2 < 255)
                         {
@@ -529,7 +520,6 @@ namespace SingleTrackAI
                     vehicleData.m_flags2 |= Vehicle.Flags2.Yielding;
                     vehicleData.m_waitCounter = 0;
                     maxSpeed = 0f;
-                    CODebug.Log(LogChannel.Modding, "CheckSpace issue");
                     return;
                 }
                 Vector3 vector = bezier.Position(0.5f);
@@ -550,7 +540,6 @@ namespace SingleTrackAI
                         vehicleData.m_flags2 |= Vehicle.Flags2.Yielding;
                         vehicleData.m_waitCounter = 0;
                         maxSpeed = 0f;
-                        CODebug.Log(LogChannel.Modding, "CheckOverlap1 issue");
                         return;
                     }
                 }
@@ -560,8 +549,6 @@ namespace SingleTrackAI
                     vehicleData.m_flags2 |= Vehicle.Flags2.Yielding;
                     vehicleData.m_waitCounter = 0;
                     maxSpeed = 0f;
-                    CODebug.Log(LogChannel.Modding, "CheckOverlap2 issue");
-
                     return;
                 }
                 if (this.m_info.m_vehicleType != VehicleInfo.VehicleType.Monorail)
@@ -614,8 +601,6 @@ namespace SingleTrackAI
                                         vehicleData.m_flags2 |= Vehicle.Flags2.Yielding;
                                         vehicleData.m_waitCounter = 0;
                                         maxSpeed = 0f;
-                                        CODebug.Log(LogChannel.Modding, "trafficLightState red issue");
-
                                         return;
                                     }
                                 }
@@ -624,8 +609,6 @@ namespace SingleTrackAI
                                     vehicleData.m_flags2 |= Vehicle.Flags2.Yielding;
                                     vehicleData.m_waitCounter = 0;
                                     maxSpeed = 0f;
-                                    CODebug.Log(LogChannel.Modding, "trafficLightState yielding issue");
-
                                     return;
                                 }
                             }
@@ -634,8 +617,6 @@ namespace SingleTrackAI
                                 vehicleData.m_flags2 |= Vehicle.Flags2.Yielding;
                                 vehicleData.m_waitCounter = 0;
                                 maxSpeed = 0f;
-                                CODebug.Log(LogChannel.Modding, "trafficLightState yielding 2 issue");
-
                                 return;
                             }
                         }
@@ -645,8 +626,6 @@ namespace SingleTrackAI
                             if (vehicleData.m_waitCounter < 4)
                             {
                                 maxSpeed = 0f;
-                                CODebug.Log(LogChannel.Modding, "yielding issue");
-
                                 return;
                             }
                             vehicleData.m_flags2 &= ~Vehicle.Flags2.Yielding;

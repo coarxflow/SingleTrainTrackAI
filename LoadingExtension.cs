@@ -137,6 +137,27 @@ namespace SingleTrackAI
             xw.WriteAttributeString("Value", Mod.noCheckOverlapOnLastSegment.ToString());
             xw.WriteEndElement();
 
+            xw.WriteComment("Fix case where train reversing at a single track station gets stuck.");
+            xw.WriteStartElement("FixReverseTrainSingleTrackStation");
+            xw.WriteAttributeString("Value", Mod.fixReverseTrainSingleTrackStation.ToString());
+            xw.WriteEndElement();
+
+            xw.WriteComment("Reserve double track station placed after a single track section. Useful in case train reverses and use the single track section again.");
+            xw.WriteStartElement("IncludeDoubleTrackStationAfterSingleTrackSection");
+            xw.WriteAttributeString("Value", Mod.includeDoubleTrackStationAfterSingleTrackSection.ToString());
+            xw.WriteEndElement();
+
+            xw.WriteComment("If station where the train stops has single tracks before and after it, the single track section placed after the station also gets reserved.");
+            xw.WriteComment("This is just some additional logic to avoid creating a separate reservation after the station, in case the train continues.");
+            xw.WriteStartElement("ExtendReservationAfterStopStation");
+            xw.WriteAttributeString("Value", Mod.extendReservationAfterStopStation.ToString());
+            xw.WriteEndElement();
+
+            xw.WriteComment("In case the trains you use have slow speeds, wait 2x more time before canceling reservations.");
+            xw.WriteStartElement("SlowSpeedTrains");
+            xw.WriteAttributeString("Value", Mod.slowSpeedTrains.ToString());
+            xw.WriteEndElement();
+
 
 
             xw.WriteEndElement();
@@ -156,6 +177,8 @@ namespace SingleTrackAI
             if (!File.Exists(sttaiSettingsFilename))
                 return false;
 
+            bool fileCorrectVersion = true;
+
             XmlReader xr = XmlReader.Create(sttaiSettingsFilename);
             try
             {
@@ -170,6 +193,10 @@ namespace SingleTrackAI
                         
                         switch (xr.Name)
                         {
+                            case "SingleTrainTrackAI":
+                                val = xr.GetAttribute("version");
+                                fileCorrectVersion = val.Equals(Mod.version);
+                                break;
                             case "AllowProrityQueue":
                                 if (bool.TryParse(val, out value))
                                 {
@@ -200,6 +227,30 @@ namespace SingleTrackAI
                                     Mod.noCheckOverlapOnLastSegment = value;
                                 }
                                 break;
+                            case "FixReverseTrainSingleTrackStation":
+                                if (bool.TryParse(val, out value))
+                                {
+                                    Mod.fixReverseTrainSingleTrackStation = value;
+                                }
+                                break;
+                            case "IncludeDoubleTrackStationAfterSingleTrackSection":
+                                if (bool.TryParse(val, out value))
+                                {
+                                    Mod.includeDoubleTrackStationAfterSingleTrackSection = value;
+                                }
+                                break;
+                            case "ExtendReservationAfterStopStation":
+                                if (bool.TryParse(val, out value))
+                                {
+                                    Mod.extendReservationAfterStopStation = value;
+                                }
+                                break;
+                            case "SlowSpeedTrains":
+                                if (bool.TryParse(val, out value))
+                                {
+                                    Mod.slowSpeedTrains = value;
+                                }
+                                break;
 
                         }
                     }
@@ -214,7 +265,7 @@ namespace SingleTrackAI
                 return false;
             }
 
-            return true;
+            return fileCorrectVersion;
         }
 
     }

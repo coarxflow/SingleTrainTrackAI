@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using ColossalFramework;
 using ICities;
@@ -21,15 +22,21 @@ namespace SingleTrackAI
         const string TARGET_RAIL_NAME3 = "Rail1LStation";
         const string TARGET_RAIL_NAME4 = "Train Station Track";
 
-        const int CLEAR_RESERVATION_AFTER = 100;
-        const int NEXT_RESERVATION_AFTER = 200;
-        const int DELETE_RESERVATION_AFTER = 1000;
-        const int DELETE_TRAINATSTATION_RESERVATION_AFTER = 2000;
+        uint CLEAR_RESERVATION_AFTER = 100;
+        uint NEXT_RESERVATION_AFTER = 200;
+        uint DELETE_RESERVATION_AFTER = 1000;
+        uint DELETE_TRAINATSTATION_RESERVATION_AFTER = 2000;
+
+        float NOT_STOPPED_VELOCITY_SQUARED = 100;
+
+        const int UPDATE_FRAMES_COUNT = 10;
 
         public static bool IsSingleTrack2WSegment(ushort segment_id)
         {
             String name = Singleton<NetManager>.instance.m_segments.m_buffer[segment_id].Info.name;
-            return name.Contains(TARGET_RAIL_NAME) || name.Contains(TARGET_RAIL_NAME2) || name.Contains(TARGET_RAIL_NAME3);
+            var railLane = Singleton<NetManager>.instance.m_segments.m_buffer[segment_id].Info.m_lanes.FirstOrDefault(l => l.m_laneType == NetInfo.LaneType.Vehicle);
+            //CODebug.Log(LogChannel.Modding, name + " class " + Singleton<NetManager>.instance.m_segments.m_buffer[segment_id].Info.m_class.name+" ai "+ Singleton<NetManager>.instance.m_segments.m_buffer[segment_id].Info.m_netAI.name+" "+ (railLane.m_direction == NetInfo.Direction.AvoidBoth));
+            return (railLane.m_direction == NetInfo.Direction.AvoidBoth) || name.Contains(TARGET_RAIL_NAME2) || name.Contains(TARGET_RAIL_NAME3);
         }
 
         public static bool IsSingleTrackStation(ushort segment_id)
@@ -96,7 +103,6 @@ namespace SingleTrackAI
                 }
 
                 PathUnit.Position pathpos;
-                //CODebug.Log(LogChannel.Modding, Mod.modName + " - pathunit " + backVehicleData.m_path + " index " + backVehicleData.m_pathPositionIndex + " " + posindex + " getpos " + pathunit.GetPosition(posindex, out pathpos));
                 if (!pathunit.GetPosition(posindex, out pathpos))
                     return null;
                 crt_segment_id = pathpos.m_segment;
@@ -134,19 +140,21 @@ namespace SingleTrackAI
                 if(IsStation(section.segment_ids[section.segment_ids.Count-1]))
                 {
                     section.containStopStation = true;
+
+
+                    //Is use of other algo really needed? Train may or may not go further along the track
+                    //Other trains check if other reservation further along the path anyway...
+
+                    // -> yes reserving single tracks after station ensure TrainExitStation is properly resolved
+                    // There is not a second, separate reservation made (except when branching...)
+
+                    if (Mod.extendReservationAfterStopStation)
+                    {
+                        //section.notFromPathSegmentsStartingAt = section.segment_ids.Count; //mark that segments further on have not been path checked
+                        AppendNextConnectedSegmentTheOldWay(section, section.segment_ids[section.segment_ids.Count - 1]);
+                    }
                 }
 
-                //Is use of other algo really needed? Train may or may not go further along the track
-                //Other trains check if other reservation further along the path anyway...
-
-                // -> yes reserving single tracks after station ensure TrainExitStation is properly resolved
-                // There is not a second, separate reservation made (except when branching...)
-
-                if (Mod.extendReservationAfterStopStation)
-                {
-                    //section.notFromPathSegmentsStartingAt = section.segment_ids.Count; //mark that segments further on have not been path checked
-                    AppendNextConnectedSegmentTheOldWay(section, section.segment_ids[section.segment_ids.Count - 1]);
-                }
             }
 
             if (section.segment_ids.Count > 0)
@@ -217,8 +225,6 @@ namespace SingleTrackAI
                         }
                     }
                 }
-
-                //CODebug.Log(LogChannel.Modding, "nodes to inspect " + nodes_included.Count + " reserved list " + reservedSegments.Count);
                 n++;
             }
         }
@@ -291,11 +297,36 @@ namespace SingleTrackAI
             return ri.train_ids.Contains(leading_vehicle_id);
         }
 
+        public ReservationInfo CheckCachedReservation(ushort start_segment, ushort leading_vehicle_id, ref ushort blocking_segment_id)
+        {
+            ReservationInfo ri;
+
+            if (m_data.cached_reservations.ContainsKey(leading_vehicle_id))
+            {
+                ri = m_data.cached_reservations[leading_vehicle_id];
+
+                if (ri.section.StartsWith(start_segment))
+                    blocking_segment_id = RegisterReservation(ri, leading_vehicle_id, false, -1);
+                else
+                    ri = null;
+            }
+            else
+                ri = null;
+
+            return ri;
+        }
+
         public ReservationInfo RegisterNewReservation(SingleTrack2WSection section, ushort leading_vehicle_id, ref ushort blocking_segment_id)
         {
             ReservationInfo ri = new ReservationInfo();
             ri.section = section;
             blocking_segment_id = RegisterReservation(ri, leading_vehicle_id, false, -1);
+
+            if (!Mod.allowGoAsFarAsPossible && blocking_segment_id != 0) //cache reservation to avoid recreating it many times in a row
+            {
+                m_data.ClearCacheForTrain(leading_vehicle_id);
+                m_data.cached_reservations.Add(leading_vehicle_id, ri);
+            }
             return ri;
         }
 
@@ -463,7 +494,7 @@ namespace SingleTrackAI
                 {
                     ReservationInfo ri = m_data.reservations[r_index];
 
-                    CODebug.Log(LogChannel.Modding, Mod.modName + " - NotifyReservation train_on_segment="+ train_on_segment+ " IsSingleTrackStation="+ IsSingleTrackStation(segment_id)+" arriving at station "+arrive_or_leave_station+" previous status "+ri.status+" for train "+vehicle_id);
+                    //CODebug.Log(LogChannel.Modding, Mod.modName + " - NotifyReservation train_on_segment="+ train_on_segment+ " IsSingleTrackStation="+ IsSingleTrackStation(segment_id)+" arriving at station "+arrive_or_leave_station+" previous status "+ri.status+" for train "+vehicle_id);
 
                     if (IsStation(segment_id))
                     {
@@ -472,6 +503,7 @@ namespace SingleTrackAI
                     }
                     else if (train_on_segment) //and not in a station
                     {
+                        m_data.ClearCacheForTrain(vehicle_id);
                         ri.status = ReservationStatus.TrainOnSection;
                     }
                     /*else //if next segment and not a station
@@ -480,7 +512,7 @@ namespace SingleTrackAI
                             ri.status = ReservationStatus.BeforeTrainEnter;
                     }*/
 
-                    CODebug.Log(LogChannel.Modding, Mod.modName + " - new status " + ri.status + " for train " + vehicle_id);
+                    //CODebug.Log(LogChannel.Modding, Mod.modName + " - new status " + ri.status + " for train " + vehicle_id);
 
 
                     ri.clearing_timer = 0;
@@ -519,7 +551,16 @@ namespace SingleTrackAI
             CODebugBase<InternalLogChannel>.VerboseLog(InternalLogChannel.System, "Creating mono singleton of type " + typeof(T).Name, gameObject);
             UnityEngine.Object.DontDestroyOnLoad(Singleton<T>.sInstance.gameObject);
 
-    */
+    */      
+            if(Mod.slowSpeedTrains)
+            {
+                CLEAR_RESERVATION_AFTER *= 2;
+                NEXT_RESERVATION_AFTER *= 2;
+                DELETE_RESERVATION_AFTER *= 2;
+                DELETE_TRAINATSTATION_RESERVATION_AFTER *= 2;
+
+                NOT_STOPPED_VELOCITY_SQUARED /= 4;
+            }
 
         }
 
@@ -535,7 +576,9 @@ namespace SingleTrackAI
 
         public override void OnAfterSimulationFrame()
         {
-            //CODebug.Log(LogChannel.Modding, "reservation count " + m_data.m_reservations.Count);
+            if (Singleton<SimulationManager>.instance.m_currentFrameIndex % UPDATE_FRAMES_COUNT != 0)
+                return;
+
             for (int r_index = m_data.reservations.Count-1; r_index >= 0; r_index--)
             {
                 ReservationInfo ri = m_data.reservations[r_index];
@@ -545,6 +588,7 @@ namespace SingleTrackAI
                 }
 
                 //check if any train in reservation is stopping at a station
+                //at the moment, only one train can be at a station (since its route is unknown)
                 if (ri.status == ReservationStatus.TrainEnterOrSkipStation || ri.status == ReservationStatus.TrainAtStation)
                 {
                     VehicleManager vm = Singleton<VehicleManager>.instance;
@@ -556,7 +600,6 @@ namespace SingleTrackAI
                             ri.status = ReservationStatus.TrainAtStation;
                             if (!ri.train_at_station_ids.Contains(id))
                                 ri.train_at_station_ids.Add(id);
-                            CODebug.Log(LogChannel.Modding, Mod.modName + " - flags " + v.m_flags + " for train " + id);
                         }
                         else if (ri.status == ReservationStatus.TrainAtStation && ri.train_at_station_ids.Contains(id))
                         {
@@ -574,7 +617,7 @@ namespace SingleTrackAI
                     foreach (ushort id in ri.train_ids)
                     {
                         Vehicle v = vm.m_vehicles.m_buffer[id];
-                        if (v.GetLastFrameVelocity().sqrMagnitude < 100) //train has not picked a decent speed
+                        if (v.GetLastFrameVelocity().sqrMagnitude < NOT_STOPPED_VELOCITY_SQUARED) //train has not picked a decent speed
                             all_trains_going = false;
                     }
                     if (all_trains_going)
@@ -584,7 +627,7 @@ namespace SingleTrackAI
                     }
                 }
 
-                ri.clearing_timer++;
+                ri.clearing_timer += UPDATE_FRAMES_COUNT;
                 m_data.reservations[r_index] = ri;
 
                 if (ri.clearing_timer > NEXT_RESERVATION_AFTER)

@@ -21,11 +21,6 @@ namespace SingleTrackAI
         {
             return this.segment_ids[0] == other.segment_ids[0] && this.segment_ids[this.segment_ids.Count - 1] == other.segment_ids[other.segment_ids.Count - 1];
         }
-
-        public bool StartsWith(ushort segment_id)
-        {
-            return this.segment_ids[0] == segment_id;
-        }
     }
 
     public enum ReservationStatus
@@ -160,11 +155,6 @@ namespace SingleTrackAI
 
                 reservations.RemoveAt(r_index);
             }
-        }
-
-        public void ClearCacheForTrain(ushort leading_vehicle_id)
-        {
-            cached_reservations.Remove(leading_vehicle_id);
         }
 
     }

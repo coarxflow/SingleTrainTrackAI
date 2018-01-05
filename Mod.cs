@@ -7,7 +7,7 @@ namespace SingleTrackAI
 		
 		public static string modName = "SingleTrainTrackAI";
 		public static String modID = "SingleTrainTrackAI";
-		public static string version = "1.2.0";
+		public static string version = "1.2.1";
 		
 		public string Name {
 			get { return modName; }
@@ -27,8 +27,8 @@ namespace SingleTrackAI
         //not in xml
         public static bool fixReverseTrainSingleTrackStation = true;
         public static bool extendReservationAfterStopStation = true;
+        public static bool includeDoubleTrackStationAfterSingleTrackSection = true;
         public static bool slowSpeedTrains = false;
-
 
     }
 }
