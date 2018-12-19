@@ -6,7 +6,6 @@ using UnityEngine;
 using ColossalFramework;
 using ICities;
 
-
 namespace SingleTrackAI
 {
 
@@ -16,11 +15,6 @@ namespace SingleTrackAI
 
         private GameObject m_go;
         public ReservationData m_data;
-
-        const string TARGET_RAIL_NAME = "Rail1L2W";
-        const string TARGET_RAIL_NAME2 = "Rail1L2SidedStation";
-        const string TARGET_RAIL_NAME3 = "Rail1LStation";
-        const string TARGET_RAIL_NAME4 = "Train Station Track";
 
         uint CLEAR_RESERVATION_AFTER = 100;
         uint NEXT_RESERVATION_AFTER = 200;
@@ -33,21 +27,26 @@ namespace SingleTrackAI
 
         public static bool IsSingleTrack2WSegment(ushort segment_id)
         {
-            String name = Singleton<NetManager>.instance.m_segments.m_buffer[segment_id].Info.name;
-            var railLane = Singleton<NetManager>.instance.m_segments.m_buffer[segment_id].Info.m_lanes.FirstOrDefault(l => l.m_laneType == NetInfo.LaneType.Vehicle);
-            //CODebug.Log(LogChannel.Modding, name + " class " + Singleton<NetManager>.instance.m_segments.m_buffer[segment_id].Info.m_class.name+" ai "+ Singleton<NetManager>.instance.m_segments.m_buffer[segment_id].Info.m_netAI.name+" "+ (railLane.m_direction == NetInfo.Direction.AvoidBoth));
-            return (railLane.m_direction == NetInfo.Direction.AvoidBoth) || name.Contains(TARGET_RAIL_NAME2) || name.Contains(TARGET_RAIL_NAME3);
+            return CheckTrainTrackSegment(
+                segment_id,
+                nameof(IsSingleTrack2WSegment),
+                (tracks, tracks_one_way, tracks_two_way, platforms) => tracks == 1 && tracks_two_way == 1);
         }
 
         public static bool IsSingleTrackStation(ushort segment_id)
         {
-            String name = Singleton<NetManager>.instance.m_segments.m_buffer[segment_id].Info.name;
-            return name.Contains(TARGET_RAIL_NAME2) || name.Contains(TARGET_RAIL_NAME3);
+            return CheckTrainTrackSegment(
+                segment_id,
+                nameof(IsSingleTrackStation),
+                (tracks, tracks_one_way, tracks_two_way, platforms) => platforms != 0 && tracks == 1);
         }
 
         public static bool IsDoubleTrackStation(ushort segment_id)
         {
-            return Singleton<NetManager>.instance.m_segments.m_buffer[segment_id].Info.name.Contains(TARGET_RAIL_NAME4);
+            return CheckTrainTrackSegment(
+                segment_id,
+                nameof(IsDoubleTrackStation),
+                (tracks, tracks_one_way, tracks_two_way, platforms) => platforms != 0 && tracks == 2);
         }
 
         public static bool IsStation(ushort segment_id)
@@ -58,6 +57,73 @@ namespace SingleTrackAI
         public static bool RequireResevation(ushort segment_id)
         {
             return IsSingleTrack2WSegment(segment_id) || IsDoubleTrackStation(segment_id);
+        }
+
+        private static bool CheckTrainTrackSegment(ushort segment_id, string name, Func<int, int, int, int, bool> check_func)
+        {
+            NetSegment segment = Singleton<NetManager>.instance.m_segments.m_buffer[segment_id];
+            NetInfo.Lane[] lanes = segment.Info.m_lanes;
+
+            int tracks = 0;
+            int tracks_one_way = 0;
+            int tracks_two_way = 0;
+            int platforms = 0;
+
+            // Use for instead of foreach since we don't want to allocate memory for the enumerator.
+            // ReSharper disable once ForCanBeConvertedToForeach
+            for (int i = 0; i < lanes.Length; i++)
+            {
+                NetInfo.Lane lane = lanes[i];
+
+                switch (lane.m_laneType)
+                {
+                    case NetInfo.LaneType.Pedestrian:
+                        if (lane.m_stopType == VehicleInfo.VehicleType.Train)
+                            platforms++;
+                        break;
+
+                    case NetInfo.LaneType.Vehicle:
+                        if (lane.m_vehicleType == VehicleInfo.VehicleType.Train)
+                        {
+                            tracks++;
+
+                            switch (lane.m_direction)
+                            {
+                                case NetInfo.Direction.Forward:
+                                    tracks_one_way++;
+                                    break;
+
+                                case NetInfo.Direction.Backward:
+                                    tracks_one_way++;
+                                    break;
+
+                                case NetInfo.Direction.Both:
+                                    tracks_two_way++;
+                                    break;
+
+                                case NetInfo.Direction.AvoidBackward:
+                                    tracks_one_way++;
+                                    break;
+
+                                case NetInfo.Direction.AvoidForward:
+                                    tracks_one_way++;
+                                    break;
+
+                                case NetInfo.Direction.AvoidBoth:
+                                    tracks_two_way++;
+                                    break;
+                            }
+                        }
+
+                        break;
+                }
+            }
+
+            bool result = check_func(tracks, tracks_one_way, tracks_two_way, platforms);
+
+            Debug.Log($"[STTAI] {name}: {segment.Info.name}, tracks {tracks}, one-way {tracks_one_way}, two-way {tracks_two_way}, platforms {platforms}, result {result}");
+
+            return result;
         }
 
         /******** reservation creation algorithm ************/
@@ -93,7 +159,7 @@ namespace SingleTrackAI
                     if (nextPathUnit == 0u)
                     {
                         //CODebug.Log(LogChannel.Modding, Mod.modName + " - no next path unit ??");
-                        
+
                         //path is at the end, don't know if train will carry after the station
                         //may add further single track segments along the track
                         buildOldWay = true; //start other algorithm, usually in case of a single track station
@@ -263,7 +329,7 @@ namespace SingleTrackAI
         public ReservationInfo GetReservationOnSegment(ushort segment_id)
         {
             int s_index = -1;
-            
+
             for (int i = 0; i < m_data.reservedSegments.Count; i++)
             {
                 if (m_data.reservedSegments[i].segment_id == segment_id)
@@ -332,7 +398,7 @@ namespace SingleTrackAI
 
         private ushort RegisterReservation(ReservationInfo ri, ushort leading_vehicle_id, bool recycle, int recycle_id)
         {
-       
+
 
             int reservation_prevented_at = -1;
             for (int i = 0; i < ri.section.segment_ids.Count; i++)
@@ -476,7 +542,7 @@ namespace SingleTrackAI
                 }
             }
 
-            
+
 
             if (s_index == -1)
             {
@@ -551,7 +617,7 @@ namespace SingleTrackAI
             CODebugBase<InternalLogChannel>.VerboseLog(InternalLogChannel.System, "Creating mono singleton of type " + typeof(T).Name, gameObject);
             UnityEngine.Object.DontDestroyOnLoad(Singleton<T>.sInstance.gameObject);
 
-    */      
+    */
             if(Mod.slowSpeedTrains)
             {
                 CLEAR_RESERVATION_AFTER *= 2;
@@ -566,7 +632,7 @@ namespace SingleTrackAI
 
         public override void OnReleased()
         {
-            
+
             if (m_go != null)
             {
                 UnityEngine.Object.Destroy(m_go);
