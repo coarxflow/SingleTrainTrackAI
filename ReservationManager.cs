@@ -51,12 +51,19 @@ namespace SingleTrackAI
 
         public static bool IsStation(ushort segment_id)
         {
-            return IsDoubleTrackStation(segment_id) || IsSingleTrackStation(segment_id);
+            return CheckTrainTrackSegment(
+                segment_id,
+                nameof(IsStation),
+                (tracks, tracks_one_way, tracks_two_way, platforms) => platforms != 0 && (tracks == 1 || tracks == 2));
         }
 
         public static bool RequireResevation(ushort segment_id)
         {
-            return IsSingleTrack2WSegment(segment_id) || IsDoubleTrackStation(segment_id);
+            return CheckTrainTrackSegment(
+                segment_id,
+                nameof(RequireResevation),
+                (tracks, tracks_one_way, tracks_two_way, platforms) => (tracks == 1 && tracks_two_way == 1) ||
+                                                                       (platforms != 0 && tracks == 2));
         }
 
         private static bool CheckTrainTrackSegment(ushort segment_id, string name, Func<int, int, int, int, bool> check_func)
