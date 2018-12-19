@@ -28,7 +28,7 @@ namespace SingleTrackAI
             bool preventCheckNextLane = false;
             bool notifyFutureTrack = false;
 
-            if(ReservationManager.RequireResevation(next_segment_id))
+            if(ReservationManager.RequireReservation(next_segment_id))
                 ri = instance2.GetReservationOnSegment(next_segment_id);
 
 
@@ -130,7 +130,7 @@ namespace SingleTrackAI
                     mayNeedSingleTrackStationFix = false;
             }
             
-            if (ReservationManager.RequireResevation(crt_segment_id)) //train carriage is on a one lane section (or double track station which may belong to a single track section)
+            if (ReservationManager.RequireReservation(crt_segment_id)) //train carriage is on a one lane section (or double track station which may belong to a single track section)
             {
                 instance2.NotifyReservation(leadingVehicleID, crt_segment_id, true, vehicleData.m_flags);
             }

@@ -57,11 +57,11 @@ namespace SingleTrackAI
                 (tracks, tracks_one_way, tracks_two_way, platforms) => platforms != 0 && (tracks == 1 || tracks == 2));
         }
 
-        public static bool RequireResevation(ushort segment_id)
+        public static bool RequireReservation(ushort segment_id)
         {
             return CheckTrainTrackSegment(
                 segment_id,
-                nameof(RequireResevation),
+                nameof(RequireReservation),
                 (tracks, tracks_one_way, tracks_two_way, platforms) => (tracks == 1 && tracks_two_way == 1) ||
                                                                        (platforms != 0 && tracks == 2));
         }
@@ -193,7 +193,7 @@ namespace SingleTrackAI
 
                 if (found_inspected_segment)
                 {
-                    if (RequireResevation(crt_segment_id))
+                    if (RequireReservation(crt_segment_id))
                     {
                         section.segment_ids.Add(crt_segment_id);
                         continue_search = true;
@@ -268,7 +268,7 @@ namespace SingleTrackAI
                     if (node.GetSegment(i) != 0)
                     {
                         nieghbours_count++;
-                        if (RequireResevation(node.GetSegment(i))) //detect 1 lane 2 ways segments
+                        if (RequireReservation(node.GetSegment(i))) //detect 1 lane 2 ways segments
                             single_lanes.Add(node.GetSegment(i));
                     }
                 }
