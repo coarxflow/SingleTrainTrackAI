@@ -128,7 +128,7 @@ namespace SingleTrackAI
 
             bool result = check_func(tracks, tracks_one_way, tracks_two_way, platforms);
 
-            Debug.Log($"[STTAI] {name}: {segment.Info.name}, tracks {tracks}, one-way {tracks_one_way}, two-way {tracks_two_way}, platforms {platforms}, result {result}");
+            //Debug.Log($"[STTAI] {name}: {segment.Info.name}, tracks {tracks}, one-way {tracks_one_way}, two-way {tracks_two_way}, platforms {platforms}, result {result}");
 
             return result;
         }
