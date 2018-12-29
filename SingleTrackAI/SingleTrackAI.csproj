@@ -28,7 +28,7 @@
       </CustomCommands>
     </CustomCommands>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <LangVersion>latest</LangVersion>
+    <LangVersion>6</LangVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>none</DebugType>
@@ -38,26 +38,25 @@
     <WarningLevel>4</WarningLevel>
     <ConsolePause>False</ConsolePause>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <LangVersion>latest</LangVersion>
+    <LangVersion>6</LangVersion>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Assembly-CSharp, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\..\SteamLibrary\steamapps\common\Cities_Skylines\Cities_Data\Managed\Assembly-CSharp.dll</HintPath>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>..\..\..\..\..\SteamLibrary\steamapps\common\Cities_Skylines\Cities_Data\Managed\Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="ColossalManaged, Version=0.3.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\..\SteamLibrary\steamapps\common\Cities_Skylines\Cities_Data\Managed\ColossalManaged.dll</HintPath>
+      <HintPath>..\..\..\..\..\SteamLibrary\steamapps\common\Cities_Skylines\Cities_Data\Managed\ColossalManaged.dll</HintPath>
     </Reference>
     <Reference Include="ICities, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\..\SteamLibrary\steamapps\common\Cities_Skylines\Cities_Data\Managed\ICities.dll</HintPath>
+      <HintPath>..\..\..\..\..\SteamLibrary\steamapps\common\Cities_Skylines\Cities_Data\Managed\ICities.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Xml" />
     <Reference Include="UnityEngine, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\..\SteamLibrary\steamapps\common\Cities_Skylines\Cities_Data\Managed\UnityEngine.dll</HintPath>
+      <HintPath>..\..\..\..\..\SteamLibrary\steamapps\common\Cities_Skylines\Cities_Data\Managed\UnityEngine.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
@@ -76,7 +75,7 @@
 IF EXIST %25FileTarget%25 del /F %25FileTarget%25</PreBuildEvent>
   </PropertyGroup>
   <PropertyGroup>
-    <PostBuildEvent>SET FileSource="D:\Mouette\mods\SingleTrainTrackAI\code\bin\Debug\SingleTrackAI.dll"
+    <PostBuildEvent>SET FileSource="D:\Mouette\mods\SingleTrainTrackAI\code\SingleTrackAI\bin\Debug\SingleTrackAI.dll"
 SET FileTarget="D:\SteamLibrary\steamapps\workshop\content\255710\949504539\SingleTrackAI.dll"
 copy %25FileSource%25 %25FileTarget%25 /y</PostBuildEvent>
   </PropertyGroup>
