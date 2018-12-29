@@ -1,0 +1,51 @@
+
+***** version 1.0.1 *****
+
+- improved compatibility with mod Traffic Manager
+- fixed interference with monorails
+- support for trains using 2 different leading engine cars
+
+***** version 1.0.2 *****
+
+- fixed some (fast) trains entering already booked single tracks, and causing train crashes
+
+***** version 1.1.0 *****
+
+- rewrote the reservation code to handle more cases
+   * fixed connected (but not used) single tracks getting booked
+   * trains going in the same direction can now follow each other
+   * added a priority queue: first train waiting on the track to clear will go first
+- performance optimization
+
+***** version 1.1.1 *****
+
+ - updated to new dev code from 1.9 (stop signs at junctions)
+ - fixed erased trains clogging the priority queue, preventing new trains to do reservations
+ - trains now look for any already reserved segment in a branching single track network, and wait for their turn accordingly
+
+***** version 1.1.2 *****
+
+ - added settings file in local Addons/Mods folder
+ - "stop" signals for train tracks can be set to auto-spawn at junctions from two tracks to single track
+
+***** version 1.1.3 *****
+
+ - increased reservation clearing time for slow trains
+ - made ignore check overlap for last single track segment an option
+
+***** version 1.2.0 *****
+
+ - single track stations can now be reserved
+ - double track station gets reserved if placed right after a single track station
+ - added some rules for stations : a second train can not follow until the first train has exited the single track section
+ - fixed a bug where trains could not reverse in stations using single tracks
+ - improved and optimized the reservation manager
+ - added an option to use bigger delays before canceling reservations, if using (very) slow trains
+
+***** version 1.2.1 *****
+
+ - changed how single tracks 2W are detected to support the ones made with the asset editor
+
+***** version 1.2.2 *****
+
+ - changed again how single tracks 2W are detected, not depending on name anymore
